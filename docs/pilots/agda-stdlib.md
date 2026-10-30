@@ -37,6 +37,10 @@ A failed run is still useful pilot evidence. Its bundle records the same source/
 
 The current `resolutionId` remains partial. The pilot does not claim an archived dependency closure, offline replay, or that `--safe` covers every module: the gate separately checks an aggregate safe set and the complete aggregate set according to upstream’s own generator.
 
+## Initial result
+
+The first pinned run passed on 30 October 2026. Its independently verified identifiers and the scope of its claim are recorded in [the initial result](agda-stdlib-result-2026-10-30.md).
+
 ## Sources
 
 - [agda-stdlib Ubuntu CI](https://github.com/agda/agda-stdlib/blob/master/.github/workflows/ci-ubuntu.yml)
