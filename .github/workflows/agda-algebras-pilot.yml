@@ -50,12 +50,13 @@ jobs:
           test ! -e agda-algebras/_build
 
       - name: Probe the flake-provided Agda resolution
+        working-directory: agda-algebras
         run: |
           nix develop --command agda-evidence probe-nix-resolution \
-            --project-root "$GITHUB_WORKSPACE/agda-algebras" \
+            --project-root "$PWD" \
             --output "$RUNNER_TEMP/agda-algebras-resolution.json"
-          rm -rf "$GITHUB_WORKSPACE/agda-algebras/.agda"
-          test ! -e "$GITHUB_WORKSPACE/agda-algebras/.agda"
+          rm -rf .agda
+          test ! -e .agda
 
       - name: Capture the upstream Type-check library lane
         run: |
