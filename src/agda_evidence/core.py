@@ -231,6 +231,10 @@ def resolution_identity_projection(resolution: dict[str, Any]) -> dict[str, Any]
                 "flakeLockSha256": _digest_identifier(flake.get("flakeLockSha256"), "resolution.nix.flake.flakeLockSha256"),
             },
         }
+        # Older v1 Nix observations did not record a system. It remains optional
+        # for compatibility, but new probes bind the result into resolutionId.
+        if "system" in nix:
+            projection["nix"]["system"] = _object(nix.get("system"), "resolution.nix.system")
     return projection
 
 
@@ -591,6 +595,9 @@ def build_nix_resolution(project_root: Path, *, nix_binary: str = "nix", agda_bi
         "nix": {
             "adapter": NIX_PROBE_ADAPTER,
             "version": _run_small_command([nix_binary, "--version"]),
+            "system": _run_small_command(
+                [nix_binary, "eval", "--raw", "--impure", "--expr", "builtins.currentSystem"]
+            ),
             "flake": {
                 "flakeNixSha256": f"sha256:{sha256_file(flake_nix)}",
                 "flakeLockSha256": f"sha256:{sha256_file(flake_lock)}",

@@ -9,6 +9,8 @@
 - Adds semantic identity verification, timestamp-order checks, and legacy-v1 integrity compatibility tests.
 - Adds a manual-only, upstream-pinned `agda-stdlib` pilot workflow and pilot documentation.
 - Adds a Nix-environment resolution probe plus verified resolution-file handoff for flake-defined Agda toolchains.
+- Binds newly probed Nix resolution identities to the evaluated Nix platform as well as the flake-file digests.
 - Adds a manual-only, upstream-pinned `agda-algebras` Type-check library pilot workflow and documentation.
+- Adds a manual-only, upstream-pinned Cardano `formal-ledger-agda` pilot workflow and documentation.
 
 This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.

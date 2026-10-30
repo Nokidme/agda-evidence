@@ -1,0 +1,96 @@
+name: formal-ledger pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      ledger_ref:
+        description: Pinned IntersectMBO/formal-ledger-specifications commit to validate
+        required: true
+        default: 7d4956e92bfa7cc472dca79c6eaf496677c24ea5
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Capture upstream formal-ledger-agda gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LEDGER_REF: ${{ inputs.ledger_ref }}
+    steps:
+      - name: Check out agda-evidence
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agda-evidence
+        run: python -m pip install .
+
+      # This mirrors the public Nix/cache configuration used by the upstream
+      # formal-ledger-agda CI job. The source flake lock remains the toolchain
+      # identity recorded in the evidence bundle.
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=https://github.com/NixOS/nixpkgs/archive/6c5963357f3c1c840201eda129a99d455074db04.tar.gz
+          extra_nix_config: |
+            trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            substituters = https://cache.iog.io https://cache.nixos.org/
+
+      - name: Check out the pinned formal-ledger source
+        run: |
+          git clone https://github.com/IntersectMBO/formal-ledger-specifications.git formal-ledger-specifications
+          git -C formal-ledger-specifications checkout --detach "$LEDGER_REF"
+          test -z "$(git -C formal-ledger-specifications status --porcelain)"
+          for generated in .agda _build dist .shake result outputs; do
+            test ! -e "formal-ledger-specifications/$generated"
+          done
+
+      - name: Probe the flake-provided Agda resolution
+        working-directory: formal-ledger-specifications
+        run: |
+          nix develop --no-write-lock-file --command agda-evidence probe-nix-resolution \
+            --project-root "$PWD" \
+            --output "$RUNNER_TEMP/formal-ledger-resolution.json"
+          rm -rf .agda
+          test ! -e .agda
+
+      - name: Capture the upstream formal-ledger-agda gate
+        run: |
+          agda-evidence capture \
+            --project-root "$GITHUB_WORKSPACE/formal-ledger-specifications" \
+            --output "$GITHUB_WORKSPACE/formal-ledger-agda.evidence" \
+            --resolution-file "$RUNNER_TEMP/formal-ledger-resolution.json" \
+            --scope "formal-ledger-agda: full Ledger specification typecheck at $LEDGER_REF" \
+            --timeout-seconds 3600 \
+            -- bash -euo pipefail -c '
+              nix build --no-write-lock-file -o outputs .#formal-ledger
+            '
+          agda-evidence verify "$GITHUB_WORKSPACE/formal-ledger-agda.evidence"
+
+      - name: Require a green recorded gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          attestation = json.loads(Path("formal-ledger-agda.evidence/attestation.json").read_text())
+          outcome = attestation["outcome"]
+          if outcome["status"] != "passed":
+              raise SystemExit(f"Recorded formal-ledger-agda gate did not pass: {outcome}")
+          print(f"Recorded formal-ledger-agda gate passed: {attestation['attestationId']}")
+          PY
+
+      - name: Upload evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-ledger-agda-evidence-${{ inputs.ledger_ref }}
+          path: formal-ledger-agda.evidence
+          if-no-files-found: warn
+          retention-days: 30

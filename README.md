@@ -50,7 +50,7 @@ agda-evidence capture \
 
 The reference CLI records that Agda was unavailable when it cannot run the configured binary. It can still capture an explicit command that does not require the binary, which is useful for testing the bundle contract but does not create a meaningful Agda attestation.
 
-For a project whose supported Agda environment exists only inside a pinned Nix flake, first run `probe-nix-resolution` *inside* `nix develop`, save its output outside the project, and pass it back via `capture --resolution-file`. The check command must still invoke `nix develop` from the staged copy. The [agda-algebras pilot](docs/pilots/agda-algebras.md) is the maintained complete example.
+For a project whose supported Agda environment exists only inside a pinned Nix flake, first run `probe-nix-resolution` *inside* `nix develop`, save its output outside the project, and pass it back via `capture --resolution-file`. The check command must still invoke its project’s native Nix command from the staged copy. The [agda-algebras pilot](docs/pilots/agda-algebras.md) and [formal-ledger pilot](docs/pilots/formal-ledger.md) are maintained examples.
 
 ## Verify a bundle
 
@@ -79,7 +79,7 @@ Read the [v1 schema notes](docs/schema.md) before publishing a bundle. Bundle co
 python -m unittest discover -s tests -v
 ```
 
-The first validation target is a common contract across `agda-stdlib`, `agda-algebras`, and the Cardano formal ledger. The [agda-stdlib pilot](docs/pilots/agda-stdlib.md) pins and transcribes the project’s existing full-library CI gate in a manual-only workflow. The core will use adapters only where project-specific conventions cannot fit the generic contract.
+The first validation target is a common contract across `agda-stdlib`, `agda-algebras`, and the Cardano formal ledger. The [agda-stdlib pilot](docs/pilots/agda-stdlib.md) transcribes a full-library gate, while the two Nix pilots preserve their projects’ native root-level commands. The core uses adapters only where project-specific conventions cannot fit the generic contract.
 
 ## License
 
