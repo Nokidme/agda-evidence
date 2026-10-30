@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agda-evidence.org/schemas/evidence-bundle-v1.schema.json",
+  "title": "agda-evidence bundle v1",
+  "description": "Top-level manifest for a portable Agda project-check evidence bundle.",
+  "type": "object",
+  "required": ["format", "bundleId", "createdAt", "schema", "components", "limitations"],
+  "properties": {
+    "format": {"const": "agda-evidence/bundle-v1"},
+    "bundleId": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "schema": {"const": "schemas/evidence-bundle-v1.schema.json"},
+    "components": {
+      "type": "object",
+      "minProperties": 4,
+      "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"},
+      "additionalProperties": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+    },
+    "limitations": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}
