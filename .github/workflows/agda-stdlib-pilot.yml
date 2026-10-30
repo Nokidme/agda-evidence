@@ -39,10 +39,23 @@ jobs:
         with:
           ghc-version: ${{ env.GHC_VERSION }}
           cabal-version: ${{ env.CABAL_VERSION }}
-          cabal-update: true
+          cabal-update: false
 
       - name: Put Cabal programs on PATH
         run: echo "$HOME/.cabal/bin" >> "$GITHUB_PATH"
+
+      # Cabal's secure mirror list can select an obsolete HTTP endpoint on
+      # current Ubuntu runners. Direct HTTPS Hackage preserves build
+      # availability; it is not a preserved or trusted dependency closure.
+      - name: Configure direct HTTPS Hackage access
+        run: |
+          mkdir -p "$HOME/.cabal"
+          cat > "$HOME/.cabal/config" <<'EOF'
+          repository hackage.haskell.org
+            url: https://hackage.haskell.org/
+            secure: False
+          EOF
+          cabal update
 
       - name: Install Agda build helpers
         run: cabal install alex happy --overwrite-policy=always

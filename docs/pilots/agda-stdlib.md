@@ -20,7 +20,7 @@ agda -Werror +RTS -M5G -H3.5G -A128M -RTS -i. -isrc -idoc \
 
 ## How to run it
 
-The repository provides a manual-only GitHub Actions workflow, **agda-stdlib pilot**. Its default input is the commit above. The workflow installs the same broad GHC/Cabal/Agda setup used by the upstream CI, builds a lexical declaration index outside the checkout, binds it to the captured snapshot, captures the composite gate as an evidence bundle, uploads the bundle even when the gate is red, and fails the run unless the attestation outcome is `passed`.
+The repository provides a manual-only GitHub Actions workflow, **agda-stdlib pilot**. Its default input is the commit above. The workflow installs the same broad GHC/Cabal/Agda setup used by the upstream CI, configures Cabal’s package route to direct HTTPS Hackage when current runner mirror selection is unavailable, builds a lexical declaration index outside the checkout, binds it to the captured snapshot, captures the composite gate as an evidence bundle, uploads the bundle even when the gate is red, and fails the run unless the attestation outcome is `passed`. This availability workaround does not turn the Cabal dependency set into an archived or trusted closure.
 
 The composite `sh -eu -c` command is intentional in v0.1. The reference CLI attests one explicit process invocation; `-e` ensures that a failure in the generator or either Agda typecheck makes that recorded composite gate fail. A later structured multi-step execution format can retain individual step records without weakening this v0.1 claim.
 

@@ -11,6 +11,9 @@ class PilotWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "agda-stdlib-pilot.yml").read_text(encoding="utf-8")
         required = (
             "565739a4d82b8bb47d2f15cb99178db15ca60e9b",
+            "Configure direct HTTPS Hackage access",
+            "url: https://hackage.haskell.org/",
+            "secure: False",
             "agda-evidence index build",
             "--output \"$RUNNER_TEMP/agda-stdlib.index.json\"",
             "--index-reference \"$RUNNER_TEMP/agda-stdlib.index.json\"",
