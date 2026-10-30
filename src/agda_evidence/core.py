@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -26,6 +27,7 @@ DIAGNOSTICS_FORMAT = "agda-evidence/captured-process-output-v1"
 INDEX_REFERENCE_FORMAT = "agda-evidence/index-reference-v1"
 RESOLUTION_IDENTITY_FORMAT = "agda-evidence/resolution-identity-v1"
 ATTESTATION_IDENTITY_FORMAT = "agda-evidence/attestation-identity-v1"
+NIX_PROBE_ADAPTER = "agda-evidence/nix-resolution-probe-v1"
 
 COMPONENT_FILENAMES = (
     "resolution.json",
@@ -199,7 +201,8 @@ def resolution_identity_projection(resolution: dict[str, Any]) -> dict[str, Any]
             if name in names:
                 raise EvidenceError(f"resolution.registry.registries contains duplicate name: {name}")
             names.add(name)
-            records.append({"name": name, "sha256": _digest_identifier(record.get("sha256"), f"resolution.registry.registries[{index}].sha256")})
+            digest_field = "resolutionSha256" if "resolutionSha256" in record else "sha256"
+            records.append({"name": name, "sha256": _digest_identifier(record.get(digest_field), f"resolution.registry.registries[{index}].{digest_field}")})
         registry_projection["agdaDirEnvironment"] = environment
         registry_projection["registries"] = sorted(records, key=lambda record: record["name"])
     else:
@@ -208,13 +211,27 @@ def resolution_identity_projection(resolution: dict[str, Any]) -> dict[str, Any]
             raise EvidenceError("unavailable resolution.registry must contain a reason")
         registry_projection["reason"] = reason
 
-    return {
+    projection = {
         "format": RESOLUTION_IDENTITY_FORMAT,
         "resolutionStatus": status,
         "agda": agda_projection,
         "projectLibraryFiles": _normalised_library_records(resolution.get("projectLibraryFiles")),
         "registry": registry_projection,
     }
+    if "nix" in resolution:
+        nix = _object(resolution.get("nix"), "resolution.nix")
+        if nix.get("adapter") != NIX_PROBE_ADAPTER:
+            raise EvidenceError("resolution.nix has an unrecognized adapter")
+        flake = _object(nix.get("flake"), "resolution.nix.flake")
+        projection["nix"] = {
+            "adapter": NIX_PROBE_ADAPTER,
+            "version": _object(nix.get("version"), "resolution.nix.version"),
+            "flake": {
+                "flakeNixSha256": _digest_identifier(flake.get("flakeNixSha256"), "resolution.nix.flake.flakeNixSha256"),
+                "flakeLockSha256": _digest_identifier(flake.get("flakeLockSha256"), "resolution.nix.flake.flakeLockSha256"),
+            },
+        }
+    return projection
 
 
 def derive_resolution_id(resolution: dict[str, Any]) -> str:
@@ -450,7 +467,20 @@ def inspect_agda(agda_binary: str) -> dict[str, Any]:
     return result
 
 
-def inspect_registry(agda_binary: str, agda_info: dict[str, Any]) -> dict[str, Any]:
+def _normalise_registry_entry(entry: str, project_root: Path | None) -> str:
+    candidate = Path(entry).expanduser()
+    if candidate.is_absolute() and project_root is not None:
+        relative = _relative_to(candidate, project_root)
+        if relative is not None:
+            return f"$PROJECT_ROOT/{relative.as_posix()}"
+    if candidate.is_absolute():
+        return _path_reference(candidate)
+    return entry
+
+
+def inspect_registry(
+    agda_binary: str, agda_info: dict[str, Any], project_root: Path | None = None
+) -> dict[str, Any]:
     """Capture registry evidence without exporting absolute machine paths."""
 
     configured_app_dir = os.environ.get("AGDA_DIR")
@@ -478,6 +508,7 @@ def inspect_registry(agda_binary: str, agda_info: dict[str, Any]) -> dict[str, A
             {
                 "name": registry.name,
                 "sha256": f"sha256:{sha256_file(registry)}",
+                "resolutionSha256": f"sha256:{digest_value({'entries': [_normalise_registry_entry(line, project_root) for line in lines]})}",
                 "entryCount": len(lines),
                 "entryPathReferences": [_path_reference(Path(line)) for line in lines],
             }
@@ -500,11 +531,75 @@ def build_resolution(project_root: Path, agda_binary: str) -> dict[str, Any]:
         "projectRootName": root.name,
         "agda": agda_info,
         "projectLibraryFiles": [parse_agda_library_file(path, root) for path in library_files],
-        "registry": inspect_registry(agda_binary, agda_info),
+        "registry": inspect_registry(agda_binary, agda_info, root),
         "resolutionStatus": "partial",
         "resolutionLimitations": [
             "Records visible project and registry configuration but does not resolve, fetch, or prove a complete dependency closure.",
             "Host paths are replaced with stable opaque references to avoid leaking local filesystem layout.",
+        ],
+    }
+    resolution["resolutionId"] = derive_resolution_id(resolution)
+    return resolution
+
+
+def _unwrap_nix_agda_launcher(agda_info: dict[str, Any], project_root: Path, agda_binary: str) -> dict[str, Any]:
+    """Replace the generated project launcher identity with its Nix-store target."""
+
+    resolved = shutil.which(agda_binary)
+    if not resolved or not agda_info.get("available"):
+        return agda_info
+    launcher = Path(resolved).resolve()
+    expected_launcher = (project_root / ".agda" / "bin" / "agda").resolve()
+    if launcher != expected_launcher or not launcher.is_file():
+        return agda_info
+    match = re.search(r'exec\s+"([^"]+)"', launcher.read_text(encoding="utf-8", errors="replace"))
+    if not match:
+        return agda_info
+    target = Path(match.group(1))
+    if not target.is_file():
+        return agda_info
+    observed = dict(agda_info)
+    observed["binaryPathReference"] = _path_reference(target)
+    observed["binarySha256"] = f"sha256:{sha256_file(target)}"
+    observed["launcher"] = "project-local-nix-wrapper-unwrapped"
+    return observed
+
+
+def build_nix_resolution(project_root: Path, *, nix_binary: str = "nix", agda_binary: str = "agda") -> dict[str, Any]:
+    """Observe an Agda environment already activated by ``nix develop``.
+
+    The caller is responsible for running this command from the same pinned flake
+    as the subsequent staged check.  The generated `.agda` directory is observed
+    here but must be absent again before the source snapshot is taken.
+    """
+
+    root = project_root.resolve()
+    flake_nix = root / "flake.nix"
+    flake_lock = root / "flake.lock"
+    if not flake_nix.is_file() or not flake_lock.is_file():
+        raise EvidenceError("Nix resolution probe requires flake.nix and flake.lock in the project root")
+    agda_info = _unwrap_nix_agda_launcher(inspect_agda(agda_binary), root, agda_binary)
+    if not agda_info.get("available"):
+        raise EvidenceError("Nix resolution probe requires an Agda executable on PATH; run it with 'nix develop --command'")
+    resolution = {
+        "format": RESOLUTION_FORMAT,
+        "capturedAt": utc_now(),
+        "projectRootName": root.name,
+        "agda": agda_info,
+        "projectLibraryFiles": [parse_agda_library_file(path, root) for path in sorted(root.glob("*.agda-lib"))],
+        "registry": inspect_registry(agda_binary, agda_info, root),
+        "nix": {
+            "adapter": NIX_PROBE_ADAPTER,
+            "version": _run_small_command([nix_binary, "--version"]),
+            "flake": {
+                "flakeNixSha256": f"sha256:{sha256_file(flake_nix)}",
+                "flakeLockSha256": f"sha256:{sha256_file(flake_lock)}",
+            },
+        },
+        "resolutionStatus": "partial",
+        "resolutionLimitations": [
+            "Records a Nix-flake toolchain observation and visible project registry, but does not archive the Nix store closure or prove offline replayability.",
+            "The probe must be created from the same pinned flake source as the staged check; it does not authorize inherited host Agda configuration.",
         ],
     }
     resolution["resolutionId"] = derive_resolution_id(resolution)
@@ -635,6 +730,45 @@ def _read_json(path: Path) -> Any:
         raise EvidenceError(f"cannot read JSON file {path}: {error}") from error
 
 
+def load_resolution_observation(path: Path) -> dict[str, Any]:
+    """Read and semantically verify a resolution handoff before it enters a bundle."""
+
+    resolution = _object(_read_json(path), "resolution observation")
+    if resolution.get("format") != RESOLUTION_FORMAT:
+        raise EvidenceError("resolution observation has an unrecognized format")
+    expected = derive_resolution_id(resolution)
+    if resolution.get("resolutionId") != expected:
+        raise EvidenceError("resolution observation does not match its visible-resolution projection")
+    return resolution
+
+
+def write_resolution_observation(path: Path, resolution: dict[str, Any]) -> None:
+    if path.exists():
+        raise EvidenceError(f"resolution observation output already exists: {path}")
+    _write_json(path, resolution)
+
+
+def validate_resolution_for_project(project_root: Path, resolution: dict[str, Any]) -> None:
+    """Reject a valid-but-unrelated handoff before binding it to a snapshot."""
+
+    root = project_root.resolve()
+    observed_libraries = _normalised_library_records(resolution.get("projectLibraryFiles"))
+    current_libraries = _normalised_library_records(
+        [parse_agda_library_file(path, root) for path in sorted(root.glob("*.agda-lib"))]
+    )
+    if observed_libraries != current_libraries:
+        raise EvidenceError("supplied resolution observation does not match the project's root .agda-lib files")
+    if "nix" not in resolution:
+        return
+    flake = _object(_object(resolution["nix"], "resolution.nix").get("flake"), "resolution.nix.flake")
+    for filename, field in (("flake.nix", "flakeNixSha256"), ("flake.lock", "flakeLockSha256")):
+        path = root / filename
+        if not path.is_file():
+            raise EvidenceError(f"supplied Nix resolution observation requires {filename} in the project root")
+        if flake.get(field) != f"sha256:{sha256_file(path)}":
+            raise EvidenceError(f"supplied Nix resolution observation does not match {filename}")
+
+
 def capture_bundle(
     project_root: Path,
     output_directory: Path,
@@ -645,6 +779,7 @@ def capture_bundle(
     timeout_seconds: int = 600,
     max_output_bytes: int = 262_144,
     index_reference: Path | None = None,
+    resolution_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = project_root.resolve()
     output = output_directory.resolve()
@@ -652,10 +787,15 @@ def capture_bundle(
         raise EvidenceError("output directory must be outside the project root")
     if output.exists() and any(output.iterdir()):
         raise EvidenceError(f"output directory is not empty: {output}")
+    if resolution_observation is not None:
+        expected_resolution_id = derive_resolution_id(resolution_observation)
+        if resolution_observation.get("resolutionId") != expected_resolution_id:
+            raise EvidenceError("supplied resolution observation does not match its visible-resolution projection")
+        validate_resolution_for_project(root, resolution_observation)
     output.mkdir(parents=True, exist_ok=True)
 
     snapshot, files = build_snapshot(root)
-    resolution = build_resolution(root, agda_binary)
+    resolution = resolution_observation if resolution_observation is not None else build_resolution(root, agda_binary)
     attestation, diagnostics = run_check(
         command,
         root,

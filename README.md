@@ -50,6 +50,8 @@ agda-evidence capture \
 
 The reference CLI records that Agda was unavailable when it cannot run the configured binary. It can still capture an explicit command that does not require the binary, which is useful for testing the bundle contract but does not create a meaningful Agda attestation.
 
+For a project whose supported Agda environment exists only inside a pinned Nix flake, first run `probe-nix-resolution` *inside* `nix develop`, save its output outside the project, and pass it back via `capture --resolution-file`. The check command must still invoke `nix develop` from the staged copy. The [agda-algebras pilot](docs/pilots/agda-algebras.md) is the maintained complete example.
+
 ## Verify a bundle
 
 ```sh
