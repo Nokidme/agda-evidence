@@ -14,6 +14,7 @@ class PilotWorkflowTests(unittest.TestCase):
             "Configure direct HTTPS Hackage access",
             "url: https://hackage.haskell.org/",
             "secure: False",
+            "cabal v2-install --install-method=copy --overwrite-policy=always",
             "agda-evidence index build",
             "--output \"$RUNNER_TEMP/agda-stdlib.index.json\"",
             "--index-reference \"$RUNNER_TEMP/agda-stdlib.index.json\"",

@@ -66,7 +66,8 @@ jobs:
           cd agda
           mkdir -p doc
           touch doc/user-manual.pdf
-          cabal v1-install --ghc-options='-O1 +RTS -M6G -RTS'
+          cabal v2-install --install-method=copy --overwrite-policy=always \
+            --ghc-options='-O1 +RTS -M6G -RTS'
 
       - name: Check out the pinned standard-library source
         run: |
