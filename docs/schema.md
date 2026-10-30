@@ -18,6 +18,14 @@ For a flake-provided toolchain, `probe-nix-resolution` can add a `nix` context t
 
 All identities use lowercase hexadecimal SHA-256 identifiers of the form `sha256:<64 hex characters>` and canonical JSON encoding used by the reference implementation.
 
+## Closed lane aggregates
+
+`agda-evidence/aggregate-v1` is a separate, closed artifact format described by [`../schemas/evidence-aggregate-v1.schema.json`](../schemas/evidence-aggregate-v1.schema.json). It includes complete child bundle directories under fixed `lanes/<safe-name>/` paths and records only independently verified, enhanced child bundles with `passed` / exit-code-0 outcomes for one shared `sourceId`.
+
+Its `aggregateId` is a stable digest of the format, common source identity, and sorted lane records. Each lane binds its included child’s complete `bundleId` plus its source, resolution, and attestation identities. It intentionally excludes aggregate creation time and prose limitations. It has no aggregate-level `resolutionId`: child resolution observations remain distinct and partial.
+
+The aggregate verifier recomputes this identity, verifies every physically included child bundle, binds every lane summary to its child, requires each child to be green, and rejects mixed sources, duplicated child bundle or attestation identities, legacy/partial child profiles, symlinks, and any unexpected files. It does not establish that the selected lanes equal an upstream project’s full CI matrix or that their environments have a common dependency closure. See the [aggregate format guide](aggregate.md) for the command interface and complete limits.
+
 ## Components
 
 `resolution.json` contains the visible Agda executable observation, root `.agda-lib` data, available registry metadata, the explicit `resolutionStatus: "partial"`, and `resolutionId`.

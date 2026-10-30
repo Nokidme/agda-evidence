@@ -12,5 +12,6 @@
 - Binds newly probed Nix resolution identities to the evaluated Nix platform as well as the flake-file digests.
 - Adds a manual-only, upstream-pinned `agda-algebras` Type-check library pilot workflow and documentation.
 - Adds a manual-only, upstream-pinned Cardano `formal-ledger-agda` pilot workflow and documentation.
+- Adds a closed aggregate-v1 envelope for independently verified green lanes from one captured source tree.
 
 This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.

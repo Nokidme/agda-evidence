@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agda-evidence.org/schemas/evidence-aggregate-v1.schema.json",
+  "title": "agda-evidence aggregate v1",
+  "description": "Closed multi-lane envelope of independently verified green Agda evidence bundles for one captured source tree.",
+  "type": "object",
+  "required": ["format", "aggregateId", "createdAt", "schema", "sourceId", "lanes", "limitations"],
+  "properties": {
+    "format": {"const": "agda-evidence/aggregate-v1"},
+    "aggregateId": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "schema": {"const": "schemas/evidence-aggregate-v1.schema.json"},
+    "sourceId": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "lanes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"},
+      "additionalProperties": {"$ref": "#/$defs/lane"}
+    },
+    "limitations": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "lane": {
+      "type": "object",
+      "required": ["bundleId", "sourceId", "resolutionId", "attestationId", "outcome"],
+      "properties": {
+        "bundleId": {"$ref": "#/$defs/digest"},
+        "sourceId": {"$ref": "#/$defs/digest"},
+        "resolutionId": {"$ref": "#/$defs/digest"},
+        "attestationId": {"$ref": "#/$defs/digest"},
+        "outcome": {
+          "type": "object",
+          "required": ["status", "exitCode"],
+          "properties": {
+            "status": {"const": "passed"},
+            "exitCode": {"const": 0}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

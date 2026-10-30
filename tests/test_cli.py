@@ -105,6 +105,37 @@ class EvidenceCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("outside the project root", result.stderr)
 
+    def test_aggregate_create_and_verify(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            project = self.make_project(temporary)
+            first = temporary / "first"
+            second = temporary / "second"
+            for output, scope in ((first, "typecheck"), (second, "documentation")):
+                result = self.run_cli(
+                    "capture",
+                    "--project-root", str(project),
+                    "--output", str(output),
+                    "--scope", scope,
+                    "--",
+                    sys.executable,
+                    "check.py",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+            aggregate = temporary / "aggregate"
+            created = self.run_cli(
+                "aggregate", "create",
+                "--output", str(aggregate),
+                "--lane", f"typecheck={first}",
+                "--lane", f"documentation={second}",
+            )
+            self.assertEqual(created.returncode, 0, created.stderr)
+            reported = json.loads(created.stdout)
+            self.assertTrue(reported["aggregateId"].startswith("sha256:"))
+            self.assertEqual(set(reported["lanes"]), {"typecheck", "documentation"})
+            self.assertEqual(self.run_cli("aggregate", "verify", str(aggregate)).returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

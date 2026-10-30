@@ -20,6 +20,7 @@ import tempfile
 from typing import Any, Iterable, Sequence
 
 BUNDLE_FORMAT = "agda-evidence/bundle-v1"
+AGGREGATE_FORMAT = "agda-evidence/aggregate-v1"
 SNAPSHOT_FORMAT = "agda-evidence/snapshot-v1"
 RESOLUTION_FORMAT = "agda-evidence/resolution-v1"
 ATTESTATION_FORMAT = "agda-evidence/attestation-v1"
@@ -28,6 +29,8 @@ INDEX_REFERENCE_FORMAT = "agda-evidence/index-reference-v1"
 RESOLUTION_IDENTITY_FORMAT = "agda-evidence/resolution-identity-v1"
 ATTESTATION_IDENTITY_FORMAT = "agda-evidence/attestation-identity-v1"
 NIX_PROBE_ADAPTER = "agda-evidence/nix-resolution-probe-v1"
+AGGREGATE_SCHEMA = "schemas/evidence-aggregate-v1.schema.json"
+LANE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 
 COMPONENT_FILENAMES = (
     "resolution.json",
@@ -1000,4 +1003,278 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
         problems.append(f"missing required core components: {', '.join(missing_core_components)}")
         return problems
     problems.extend(_verify_enhanced_identities(payloads, bundle))
+    return problems
+
+
+def _lane_name(value: Any, field: str = "lane name") -> str:
+    if not isinstance(value, str) or not LANE_NAME_RE.fullmatch(value):
+        raise EvidenceError(f"{field} must match {LANE_NAME_RE.pattern!r}")
+    return value
+
+
+def _green_outcome(value: Any, field: str) -> dict[str, Any]:
+    outcome = _object(value, field)
+    if set(outcome) != {"status", "exitCode"}:
+        raise EvidenceError(f"{field} must contain only status and exitCode")
+    exit_code = outcome.get("exitCode")
+    if outcome.get("status") != "passed" or not isinstance(exit_code, int) or isinstance(exit_code, bool) or exit_code != 0:
+        raise EvidenceError(f"{field} must report passed with exitCode 0")
+    return {"status": "passed", "exitCode": 0}
+
+
+def _aggregate_lane_record(value: Any, field: str) -> dict[str, Any]:
+    record = _object(value, field)
+    expected_fields = {"bundleId", "sourceId", "resolutionId", "attestationId", "outcome"}
+    if set(record) != expected_fields:
+        raise EvidenceError(f"{field} must contain exactly {', '.join(sorted(expected_fields))}")
+    return {
+        "bundleId": _digest_identifier(record.get("bundleId"), f"{field}.bundleId"),
+        "sourceId": _digest_identifier(record.get("sourceId"), f"{field}.sourceId"),
+        "resolutionId": _digest_identifier(record.get("resolutionId"), f"{field}.resolutionId"),
+        "attestationId": _digest_identifier(record.get("attestationId"), f"{field}.attestationId"),
+        "outcome": _green_outcome(record.get("outcome"), f"{field}.outcome"),
+    }
+
+
+def aggregate_identity_projection(aggregate: dict[str, Any]) -> dict[str, Any]:
+    """Return the stable lane-selection identity for a closed aggregate."""
+
+    if aggregate.get("format") != AGGREGATE_FORMAT:
+        raise EvidenceError("aggregate.json has an unrecognized format")
+    source_id = _digest_identifier(aggregate.get("sourceId"), "aggregate.sourceId")
+    lanes = aggregate.get("lanes")
+    if not isinstance(lanes, dict) or not lanes:
+        raise EvidenceError("aggregate.lanes must be a non-empty object")
+    normalized_lanes: dict[str, dict[str, Any]] = {}
+    for name, record in lanes.items():
+        lane_name = _lane_name(name, "aggregate.lanes key")
+        normalized_lanes[lane_name] = _aggregate_lane_record(record, f"aggregate.lanes.{lane_name}")
+    return {
+        "format": AGGREGATE_FORMAT,
+        "sourceId": source_id,
+        "lanes": {name: normalized_lanes[name] for name in sorted(normalized_lanes)},
+    }
+
+
+def derive_aggregate_id(aggregate: dict[str, Any]) -> str:
+    return f"sha256:{digest_value(aggregate_identity_projection(aggregate))}"
+
+
+def _enhanced_green_bundle_record(bundle_directory: Path, context: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the aggregate lane record and child manifest for one verified bundle."""
+
+    problems = verify_bundle(bundle_directory)
+    if problems:
+        raise EvidenceError(f"{context} is not a valid bundle: {'; '.join(problems)}")
+    bundle = _object(_read_json(bundle_directory / "bundle.json"), f"{context} bundle.json")
+    snapshot = _object(_read_json(bundle_directory / "snapshot.json"), f"{context} snapshot.json")
+    resolution = _object(_read_json(bundle_directory / "resolution.json"), f"{context} resolution.json")
+    attestation = _object(_read_json(bundle_directory / "attestation.json"), f"{context} attestation.json")
+
+    required_fields = {
+        "sourceId": snapshot.get("sourceId"),
+        "resolutionId": resolution.get("resolutionId"),
+        "attestationId": attestation.get("attestationId"),
+    }
+    if any(value is None for value in required_fields.values()):
+        raise EvidenceError(f"{context} must use the complete enhanced identity profile")
+    outcome = _object(attestation.get("outcome"), f"{context} attestation.outcome")
+    if outcome.get("executionError") is not None:
+        raise EvidenceError(f"{context} has an execution error and cannot be aggregated")
+    lane_record = {
+        "bundleId": _digest_identifier(bundle.get("bundleId"), f"{context} bundleId"),
+        "sourceId": _digest_identifier(snapshot.get("sourceId"), f"{context} sourceId"),
+        "resolutionId": _digest_identifier(resolution.get("resolutionId"), f"{context} resolutionId"),
+        "attestationId": _digest_identifier(attestation.get("attestationId"), f"{context} attestationId"),
+        "outcome": _green_outcome(
+            {"status": outcome.get("status"), "exitCode": outcome.get("exitCode")},
+            f"{context} attestation.outcome",
+        ),
+    }
+    return lane_record, bundle
+
+
+def _copy_verified_bundle(source: Path, destination: Path, bundle: dict[str, Any]) -> None:
+    """Materialize only a verified child manifest and its declared components."""
+
+    components = bundle.get("components")
+    if not isinstance(components, dict):
+        raise EvidenceError("verified child bundle does not contain a components object")
+    destination.mkdir(parents=True, exist_ok=False)
+    for filename in ["bundle.json", *sorted(components)]:
+        source_file = source / filename
+        if source_file.is_symlink() or not source_file.is_file():
+            raise EvidenceError(f"cannot materialize unsafe child bundle file: {source_file}")
+        shutil.copy2(source_file, destination / filename)
+
+
+def _verify_closed_child_directory(child_root: Path, lane_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if child_root.is_symlink() or not child_root.is_dir():
+        raise EvidenceError(f"aggregate lane {lane_name} is missing its fixed child directory")
+    lane_record, bundle = _enhanced_green_bundle_record(child_root, f"aggregate lane {lane_name}")
+    components = bundle.get("components")
+    if not isinstance(components, dict):
+        raise EvidenceError(f"aggregate lane {lane_name} does not contain a components object")
+    expected_names = {"bundle.json", *components}
+    actual_names: set[str] = set()
+    for entry in child_root.iterdir():
+        if entry.is_symlink() or not entry.is_file():
+            raise EvidenceError(f"aggregate lane {lane_name} contains an unsafe child entry: {entry.name}")
+        actual_names.add(entry.name)
+    if actual_names != expected_names:
+        unexpected = sorted(actual_names - expected_names)
+        missing = sorted(expected_names - actual_names)
+        details: list[str] = []
+        if unexpected:
+            details.append(f"unexpected files: {', '.join(unexpected)}")
+        if missing:
+            details.append(f"missing files: {', '.join(missing)}")
+        raise EvidenceError(f"aggregate lane {lane_name} is not a closed child bundle ({'; '.join(details)})")
+    return lane_record, bundle
+
+
+def create_aggregate(
+    output_directory: Path,
+    lane_inputs: Sequence[tuple[str, Path]],
+) -> dict[str, Any]:
+    """Create a self-contained, green aggregate from verified child bundles."""
+
+    output = output_directory.resolve()
+    if output.exists():
+        if not output.is_dir():
+            raise EvidenceError(f"aggregate output path is not a directory: {output}")
+        if any(output.iterdir()):
+            raise EvidenceError(f"output directory is not empty: {output}")
+    if not lane_inputs:
+        raise EvidenceError("at least one --lane NAME=BUNDLE input is required")
+
+    child_data: list[tuple[str, Path, dict[str, Any], dict[str, Any]]] = []
+    names: set[str] = set()
+    bundle_ids: set[str] = set()
+    attestation_ids: set[str] = set()
+    source_ids: set[str] = set()
+    for raw_name, raw_path in lane_inputs:
+        name = _lane_name(raw_name)
+        if name in names:
+            raise EvidenceError(f"aggregate lane name is repeated: {name}")
+        names.add(name)
+        source = raw_path.resolve()
+        record, bundle = _enhanced_green_bundle_record(source, f"aggregate lane {name}")
+        if record["bundleId"] in bundle_ids:
+            raise EvidenceError(f"aggregate cannot count the same bundle twice: {record['bundleId']}")
+        if record["attestationId"] in attestation_ids:
+            raise EvidenceError(f"aggregate cannot count the same attestation twice: {record['attestationId']}")
+        bundle_ids.add(record["bundleId"])
+        attestation_ids.add(record["attestationId"])
+        source_ids.add(record["sourceId"])
+        child_data.append((name, source, record, bundle))
+    if len(source_ids) != 1:
+        raise EvidenceError("aggregate child bundles must have one identical sourceId")
+
+    output.mkdir(parents=True, exist_ok=True)
+    lanes_directory = output / "lanes"
+    lanes_directory.mkdir()
+    lanes: dict[str, dict[str, Any]] = {}
+    for name, source, record, bundle in sorted(child_data, key=lambda item: item[0]):
+        _copy_verified_bundle(source, lanes_directory / name, bundle)
+        lanes[name] = record
+    aggregate = {
+        "format": AGGREGATE_FORMAT,
+        "createdAt": utc_now(),
+        "schema": AGGREGATE_SCHEMA,
+        "sourceId": next(iter(source_ids)),
+        "lanes": lanes,
+        "limitations": [
+            "Each lane attests only its included child bundle's explicit command and scope.",
+            "Lane resolution observations are partial and are not compared, merged, or treated as a dependency closure.",
+            "This aggregate does not establish all-project CI coverage, offline replayability, signatures, authorship, or trust.",
+        ],
+    }
+    aggregate["aggregateId"] = derive_aggregate_id(aggregate)
+    _write_json(output / "aggregate.json", aggregate)
+    problems = verify_aggregate(output)
+    if problems:
+        raise EvidenceError(f"created aggregate did not verify: {'; '.join(problems)}")
+    return aggregate
+
+
+def verify_aggregate(aggregate_directory: Path) -> list[str]:
+    """Verify a closed aggregate and every child bundle it includes."""
+
+    if aggregate_directory.is_symlink():
+        return ["aggregate directory must not be a symlink"]
+    root = aggregate_directory.resolve()
+    if not root.is_dir():
+        return [f"aggregate directory is not a directory: {aggregate_directory}"]
+    manifest_path = root / "aggregate.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        return ["aggregate is missing a regular aggregate.json manifest"]
+    root_entries = {entry.name for entry in root.iterdir()}
+    if root_entries != {"aggregate.json", "lanes"}:
+        unexpected = sorted(root_entries - {"aggregate.json", "lanes"})
+        missing = sorted({"aggregate.json", "lanes"} - root_entries)
+        details: list[str] = []
+        if unexpected:
+            details.append(f"unexpected entries: {', '.join(unexpected)}")
+        if missing:
+            details.append(f"missing entries: {', '.join(missing)}")
+        return [f"aggregate directory is not closed ({'; '.join(details)})"]
+    try:
+        aggregate = _object(_read_json(manifest_path), "aggregate.json")
+        expected_root_fields = {"format", "aggregateId", "createdAt", "schema", "sourceId", "lanes", "limitations"}
+        if set(aggregate) != expected_root_fields:
+            return [f"aggregate.json must contain exactly {', '.join(sorted(expected_root_fields))}"]
+        if aggregate.get("schema") != AGGREGATE_SCHEMA:
+            return ["aggregate.json has an unrecognized schema path"]
+        _parse_timestamp(aggregate.get("createdAt"), "aggregate.createdAt")
+        limitations = aggregate.get("limitations")
+        if not isinstance(limitations, list) or not all(isinstance(value, str) for value in limitations):
+            return ["aggregate.limitations must be a string array"]
+        identity = aggregate_identity_projection(aggregate)
+    except EvidenceError as error:
+        return [str(error)]
+
+    problems: list[str] = []
+    expected_aggregate_id = f"sha256:{digest_value(identity)}"
+    if aggregate.get("aggregateId") != expected_aggregate_id:
+        problems.append("aggregateId does not match the selected lane records")
+
+    source_id = identity["sourceId"]
+    lanes = identity["lanes"]
+    if not isinstance(lanes, dict):  # Satisfies static type narrowing and is unreachable after projection.
+        return problems + ["aggregate.lanes must be an object"]
+    lanes_directory = root / "lanes"
+    if lanes_directory.is_symlink() or not lanes_directory.is_dir():
+        return problems + ["aggregate is missing its fixed lanes directory"]
+    actual_lane_names = {entry.name for entry in lanes_directory.iterdir()}
+    expected_lane_names = set(lanes)
+    if actual_lane_names != expected_lane_names:
+        unexpected = sorted(actual_lane_names - expected_lane_names)
+        missing = sorted(expected_lane_names - actual_lane_names)
+        details: list[str] = []
+        if unexpected:
+            details.append(f"unexpected lanes: {', '.join(unexpected)}")
+        if missing:
+            details.append(f"missing lanes: {', '.join(missing)}")
+        problems.append(f"aggregate lanes directory is not closed ({'; '.join(details)})")
+    bundle_ids: set[str] = set()
+    attestation_ids: set[str] = set()
+    for name, claimed_record in lanes.items():
+        try:
+            actual_record, _ = _verify_closed_child_directory(root / "lanes" / name, name)
+        except EvidenceError as error:
+            problems.append(str(error))
+            continue
+        if actual_record != claimed_record:
+            problems.append(f"aggregate lane {name} does not match its included child bundle")
+        if actual_record["sourceId"] != source_id:
+            problems.append(f"aggregate lane {name} has a different sourceId")
+        bundle_id = actual_record["bundleId"]
+        attestation_id = actual_record["attestationId"]
+        if bundle_id in bundle_ids:
+            problems.append(f"aggregate duplicates child bundleId: {bundle_id}")
+        if attestation_id in attestation_ids:
+            problems.append(f"aggregate duplicates child attestationId: {attestation_id}")
+        bundle_ids.add(bundle_id)
+        attestation_ids.add(attestation_id)
     return problems

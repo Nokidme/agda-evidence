@@ -13,7 +13,9 @@ from .core import (
     EvidenceError,
     build_nix_resolution,
     capture_bundle,
+    create_aggregate,
     load_resolution_observation,
+    verify_aggregate,
     verify_bundle,
     write_resolution_observation,
 )
@@ -60,6 +62,29 @@ def build_parser() -> argparse.ArgumentParser:
     nix_probe.add_argument("--output", type=Path, required=True, help="new JSON resolution observation file")
     nix_probe.add_argument("--nix-bin", default="nix", help="Nix executable to inspect (default: nix)")
     nix_probe.add_argument("--agda-bin", default="agda", help="Agda executable to inspect (default: agda)")
+
+    aggregate = subparsers.add_parser(
+        "aggregate",
+        help="create or verify a closed aggregate of independently verified green bundles",
+    )
+    aggregate_subparsers = aggregate.add_subparsers(dest="aggregate_command", required=True)
+    aggregate_create = aggregate_subparsers.add_parser(
+        "create",
+        help="copy passed enhanced bundles into a closed aggregate envelope",
+    )
+    aggregate_create.add_argument("--output", type=Path, required=True, help="new or empty aggregate directory")
+    aggregate_create.add_argument(
+        "--lane",
+        action="append",
+        required=True,
+        metavar="NAME=BUNDLE",
+        help="safe lane name and existing child bundle directory; repeat for each lane",
+    )
+    aggregate_verify = aggregate_subparsers.add_parser(
+        "verify",
+        help="verify a closed aggregate and every included child bundle",
+    )
+    aggregate_verify.add_argument("aggregate", type=Path, help="directory containing aggregate.json")
 
     verify = subparsers.add_parser("verify", help="verify component and bundle identifiers")
     verify.add_argument("bundle", type=Path, help="directory containing bundle.json")
@@ -124,6 +149,46 @@ def _verify(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_lane_specification(value: str) -> tuple[str, Path]:
+    name, delimiter, raw_path = value.partition("=")
+    if not delimiter or not name or not raw_path:
+        raise EvidenceError("--lane must use NAME=BUNDLE with non-empty values")
+    return name, Path(raw_path)
+
+
+def _aggregate_create(arguments: argparse.Namespace) -> int:
+    aggregate = create_aggregate(
+        arguments.output,
+        [_parse_lane_specification(value) for value in arguments.lane],
+    )
+    print(
+        json.dumps(
+            {
+                "aggregateId": aggregate["aggregateId"],
+                "sourceId": aggregate["sourceId"],
+                "lanes": {
+                    name: aggregate["lanes"][name]["bundleId"]
+                    for name in sorted(aggregate["lanes"])
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _aggregate_verify(arguments: argparse.Namespace) -> int:
+    problems = verify_aggregate(arguments.aggregate)
+    if problems:
+        print("Evidence aggregate verification failed:", file=sys.stderr)
+        for problem in problems:
+            print(f"- {problem}", file=sys.stderr)
+        return 1
+    print("Evidence aggregate verification passed.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -132,6 +197,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _capture(arguments)
         if arguments.subcommand == "probe-nix-resolution":
             return _probe_nix_resolution(arguments)
+        if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
+            return _aggregate_create(arguments)
+        if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":
+            return _aggregate_verify(arguments)
         if arguments.subcommand == "verify":
             return _verify(arguments)
         parser.error(f"unknown subcommand: {arguments.subcommand}")

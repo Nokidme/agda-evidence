@@ -52,6 +52,21 @@ The reference CLI records that Agda was unavailable when it cannot run the confi
 
 For a project whose supported Agda environment exists only inside a pinned Nix flake, first run `probe-nix-resolution` *inside* `nix develop`, save its output outside the project, and pass it back via `capture --resolution-file`. The check command must still invoke its project’s native Nix command from the staged copy. The [agda-algebras pilot](docs/pilots/agda-algebras.md) and [formal-ledger pilot](docs/pilots/formal-ledger.md) are maintained examples.
 
+## Aggregate independent lanes
+
+For multiple independently captured green lanes from the **same** source tree, create a closed aggregate. It physically includes each child bundle and rejects failed lanes, mixed source identities, duplicated evidence, and external references:
+
+```sh
+agda-evidence aggregate create \
+  --output /tmp/project.aggregate \
+  --lane typecheck=/tmp/project-typecheck.evidence \
+  --lane docs=/tmp/project-docs.evidence
+
+agda-evidence aggregate verify /tmp/project.aggregate
+```
+
+An aggregate says only that every included child command passed for the shared `sourceId`; it does not prove that those lanes are a project’s complete CI matrix. See the [aggregate format guide](docs/aggregate.md).
+
 ## Verify a bundle
 
 ```sh
