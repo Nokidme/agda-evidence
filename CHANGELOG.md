@@ -13,5 +13,6 @@
 - Adds a manual-only, upstream-pinned `agda-algebras` Type-check library pilot workflow and documentation.
 - Adds a manual-only, upstream-pinned Cardano `formal-ledger-agda` pilot workflow and documentation.
 - Adds a closed aggregate-v1 envelope for independently verified green lanes from one captured source tree.
+- Adds source-bound lexical declaration-index build and evidence-query commands, including stale-index rejection at capture time.
 
 This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.

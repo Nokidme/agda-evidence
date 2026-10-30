@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agda-evidence.org/schemas/declaration-index-v1.schema.json",
+  "title": "agda-evidence declaration index v1",
+  "description": "A deterministic lexical candidate index bound to one evidence snapshot source identity.",
+  "type": "object",
+  "required": ["format", "indexId", "sourceId", "scanner", "entries"],
+  "properties": {
+    "format": {"const": "agda-evidence/declaration-index-v1"},
+    "indexId": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "sourceId": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "scanner": {
+      "type": "object",
+      "required": ["format"],
+      "properties": {"format": {"const": "agda-evidence/lexical-discovery-v1"}},
+      "additionalProperties": false
+    },
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "entry": {
+      "type": "object",
+      "required": ["qualifiedName", "kind", "path", "line", "sourceSha256"],
+      "properties": {
+        "qualifiedName": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["module", "signature", "data", "record", "postulate", "primitive"]},
+        "path": {"type": "string", "pattern": "^(?!/)(?!.*\\\\).+\\.(agda|lagda\\.md)$"},
+        "line": {"type": "integer", "minimum": 1},
+        "sourceSha256": {"$ref": "#/$defs/digest"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

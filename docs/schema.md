@@ -36,7 +36,9 @@ The aggregate verifier recomputes this identity, verifies every physically inclu
 
 `diagnostics.json` holds bounded stdout/stderr and normalization metadata. v1 does not claim a complete structured Agda diagnostic parser. Its complete canonical payload is the value named by `attestation.diagnosticsDigest`.
 
-`index-ref.json` is optional. It binds externally produced declaration-index metadata to the artifact. It changes `bundleId` but must not change source, resolution, or attestation identities.
+`index-ref.json` is optional. New captures contain a `declaration-index-v1` lexical source index built with the fixed `lexical-discovery-v1` scanner policy. The index binds its `sourceId`, every candidate path, and every candidate source digest to `snapshot.json`; it changes `bundleId` but must not change source, resolution, or attestation identities. Capture re-scans the current source before attaching it, and verification rechecks the manifest bindings and index identity. It does not typecheck, resolve, or prove complete declarations. The precise scanner and query contract is in the [declaration-index guide](declaration-index.md).
+
+Earlier `index-ref.json` components using the same wrapper format and an opaque `content` field remain byte-integrity-compatible, but they are not source-bound declaration indexes and cannot be queried through `agda-evidence index query`.
 
 ## Verification and compatibility
 

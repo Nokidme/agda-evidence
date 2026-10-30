@@ -26,11 +26,25 @@ RESOLUTION_FORMAT = "agda-evidence/resolution-v1"
 ATTESTATION_FORMAT = "agda-evidence/attestation-v1"
 DIAGNOSTICS_FORMAT = "agda-evidence/captured-process-output-v1"
 INDEX_REFERENCE_FORMAT = "agda-evidence/index-reference-v1"
+DECLARATION_INDEX_FORMAT = "agda-evidence/declaration-index-v1"
+LEXICAL_DISCOVERY_FORMAT = "agda-evidence/lexical-discovery-v1"
 RESOLUTION_IDENTITY_FORMAT = "agda-evidence/resolution-identity-v1"
 ATTESTATION_IDENTITY_FORMAT = "agda-evidence/attestation-identity-v1"
 NIX_PROBE_ADAPTER = "agda-evidence/nix-resolution-probe-v1"
 AGGREGATE_SCHEMA = "schemas/evidence-aggregate-v1.schema.json"
 LANE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
+DECLARATION_KINDS = {"module", "signature", "data", "record", "postulate", "primitive"}
+INDEXABLE_SOURCE_SUFFIXES = (".agda", ".lagda.md")
+AGDA_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})\s*(?:agda|agda2)\s*$", re.IGNORECASE)
+FENCE_CLOSE_RE = re.compile(r"^\s*(`{3,}|~{3,})\s*$")
+MODULE_CANDIDATE_RE = re.compile(r"^module\s+([^\s(]+)(?:\s|\().*\bwhere\b")
+DECLARATION_CANDIDATE_RES = (
+    ("data", re.compile(r"^data\s+([^\s:({]+)")),
+    ("record", re.compile(r"^record\s+([^\s:({]+)")),
+    ("postulate", re.compile(r"^postulate\s+([^\s:({]+)\s*:")),
+    ("primitive", re.compile(r"^primitive\s+([^\s:({]+)\s*:")),
+    ("signature", re.compile(r"^([^\s:(){};]+)\s*:")),
+)
 
 COMPONENT_FILENAMES = (
     "resolution.json",
@@ -378,6 +392,278 @@ def build_snapshot(project_root: Path) -> tuple[dict[str, Any], list[FileEntry]]
     snapshot["sourceDigest"] = source_id
     snapshot["sourceId"] = source_id
     return snapshot, files
+
+
+def _indexable_source_path(path: Any, field: str) -> str:
+    if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+        raise EvidenceError(f"{field} must be a non-absolute slash-separated source path")
+    parts = path.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise EvidenceError(f"{field} must not contain empty, dot, or parent path segments")
+    if not path.endswith(INDEXABLE_SOURCE_SUFFIXES):
+        raise EvidenceError(f"{field} must name an .agda or .lagda.md source file")
+    return path
+
+
+def _index_entry_sort_key(entry: dict[str, Any]) -> tuple[str, int, str, str]:
+    return (str(entry["path"]), int(entry["line"]), str(entry["kind"]), str(entry["qualifiedName"]))
+
+
+def _normalised_declaration_entries(entries: Any) -> list[dict[str, Any]]:
+    if not isinstance(entries, list):
+        raise EvidenceError("declaration index entries must be an array")
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, str, str]] = set()
+    for number, value in enumerate(entries):
+        record = _object(value, f"declaration index entries[{number}]")
+        expected_fields = {"qualifiedName", "kind", "path", "line", "sourceSha256"}
+        if set(record) != expected_fields:
+            raise EvidenceError(
+                f"declaration index entries[{number}] must contain exactly {', '.join(sorted(expected_fields))}"
+            )
+        qualified_name = record.get("qualifiedName")
+        if not isinstance(qualified_name, str) or not qualified_name or qualified_name.strip() != qualified_name or "\n" in qualified_name:
+            raise EvidenceError(f"declaration index entries[{number}].qualifiedName must be a non-empty one-line string")
+        kind = record.get("kind")
+        if kind not in DECLARATION_KINDS:
+            raise EvidenceError(f"declaration index entries[{number}].kind is not a supported lexical candidate kind")
+        line = record.get("line")
+        if not isinstance(line, int) or isinstance(line, bool) or line < 1:
+            raise EvidenceError(f"declaration index entries[{number}].line must be a positive integer")
+        normalized_record = {
+            "qualifiedName": qualified_name,
+            "kind": kind,
+            "path": _indexable_source_path(record.get("path"), f"declaration index entries[{number}].path"),
+            "line": line,
+            "sourceSha256": _digest_identifier(
+                record.get("sourceSha256"), f"declaration index entries[{number}].sourceSha256"
+            ),
+        }
+        key = _index_entry_sort_key(normalized_record)
+        if key in seen:
+            raise EvidenceError(f"declaration index entries contains a duplicate candidate at {normalized_record['path']}:{line}")
+        seen.add(key)
+        normalized.append(normalized_record)
+    normalized.sort(key=_index_entry_sort_key)
+    if entries != normalized:
+        raise EvidenceError("declaration index entries must be sorted by path, line, kind, and qualifiedName")
+    return normalized
+
+
+def declaration_index_identity_projection(index: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic identity projection of a lexical source index."""
+
+    expected_fields = {"format", "indexId", "sourceId", "scanner", "entries"}
+    if set(index) != expected_fields:
+        raise EvidenceError(f"declaration index must contain exactly {', '.join(sorted(expected_fields))}")
+    if index.get("format") != DECLARATION_INDEX_FORMAT:
+        raise EvidenceError("declaration index has an unrecognized format")
+    scanner = _object(index.get("scanner"), "declaration index scanner")
+    if scanner != {"format": LEXICAL_DISCOVERY_FORMAT}:
+        raise EvidenceError("declaration index has an unrecognized scanner policy")
+    return {
+        "format": DECLARATION_INDEX_FORMAT,
+        "sourceId": _digest_identifier(index.get("sourceId"), "declaration index sourceId"),
+        "scanner": {"format": LEXICAL_DISCOVERY_FORMAT},
+        "entries": _normalised_declaration_entries(index.get("entries")),
+    }
+
+
+def derive_declaration_index_id(index: dict[str, Any]) -> str:
+    return f"sha256:{digest_value(declaration_index_identity_projection(index))}"
+
+
+def _qualified_candidate_name(module_name: str | None, name: str) -> str:
+    return f"{module_name}.{name}" if module_name else name
+
+
+def _scan_agda_code_line(
+    line: str,
+    *,
+    path: str,
+    line_number: int,
+    source_sha256: str,
+    module_name: str | None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Return lexical candidates for a physical code line, never a parsed AST claim."""
+
+    if not line or line[:1].isspace():
+        return module_name, []
+    code = line.split("--", 1)[0].rstrip()
+    if not code or code.startswith("{-"):
+        return module_name, []
+    module_match = MODULE_CANDIDATE_RE.match(code)
+    if module_match:
+        module_name = module_match.group(1)
+        return module_name, [
+            {
+                "qualifiedName": module_name,
+                "kind": "module",
+                "path": path,
+                "line": line_number,
+                "sourceSha256": source_sha256,
+            }
+        ]
+    for kind, pattern in DECLARATION_CANDIDATE_RES:
+        candidate_match = pattern.match(code)
+        if candidate_match:
+            name = candidate_match.group(1)
+            return module_name, [
+                {
+                    "qualifiedName": _qualified_candidate_name(module_name, name),
+                    "kind": kind,
+                    "path": path,
+                    "line": line_number,
+                    "sourceSha256": source_sha256,
+                }
+            ]
+    return module_name, []
+
+
+def _literate_agda_lines(text: str) -> Iterable[tuple[int, str]]:
+    """Yield only physical lines in explicitly tagged Markdown Agda fences."""
+
+    opening: str | None = None
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if opening is None:
+            match = AGDA_FENCE_RE.match(line)
+            if match:
+                opening = match.group(1)[0]
+            continue
+        closing = FENCE_CLOSE_RE.match(line)
+        if closing and closing.group(1)[0] == opening:
+            opening = None
+            continue
+        yield line_number, line
+
+
+def _lexical_candidates_for_file(path: str, text: str, source_sha256: str) -> list[dict[str, Any]]:
+    source_lines: Iterable[tuple[int, str]]
+    if path.endswith(".lagda.md"):
+        source_lines = _literate_agda_lines(text)
+    else:
+        source_lines = enumerate(text.splitlines(), start=1)
+    module_name: str | None = None
+    entries: list[dict[str, Any]] = []
+    for line_number, line in source_lines:
+        module_name, candidates = _scan_agda_code_line(
+            line,
+            path=path,
+            line_number=line_number,
+            source_sha256=source_sha256,
+            module_name=module_name,
+        )
+        entries.extend(candidates)
+    return entries
+
+
+def build_declaration_index(project_root: Path, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build a deterministic lexical discovery index for snapshot-visible Agda source.
+
+    The scanner intentionally does not invoke Agda or resolve scope. Its records are
+    candidate heads found in source text, bound to the source file digest that was
+    included in the snapshot.
+    """
+
+    root = project_root.resolve()
+    if snapshot is None:
+        snapshot, _ = build_snapshot(root)
+    source_id = derive_source_id(snapshot)
+    if snapshot.get("sourceId") != source_id:
+        raise EvidenceError("snapshot.sourceId does not match the recorded file tree")
+    files = _normalised_file_records(snapshot.get("files"))
+    entries: list[dict[str, Any]] = []
+    for record in files:
+        path = record["path"]
+        if not path.endswith(INDEXABLE_SOURCE_SUFFIXES):
+            continue
+        safe_path = _indexable_source_path(path, "snapshot indexed source path")
+        source = root / safe_path
+        if source.is_symlink() or not source.is_file() or f"sha256:{sha256_file(source)}" != record["sha256"]:
+            raise EvidenceError(f"project changed while building declaration index: {safe_path}")
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            raise EvidenceError(f"indexed Agda source is not valid UTF-8: {safe_path}") from error
+        entries.extend(_lexical_candidates_for_file(safe_path, text, record["sha256"]))
+    entries.sort(key=_index_entry_sort_key)
+    index: dict[str, Any] = {
+        "format": DECLARATION_INDEX_FORMAT,
+        "indexId": "",
+        "sourceId": source_id,
+        "scanner": {"format": LEXICAL_DISCOVERY_FORMAT},
+        "entries": entries,
+    }
+    index["indexId"] = derive_declaration_index_id(index)
+    return index
+
+
+def validate_declaration_index(
+    index: dict[str, Any], snapshot: dict[str, Any], project_root: Path | None = None
+) -> None:
+    """Reject an index that is malformed, stale, or mismatched to a snapshot."""
+
+    expected_index_id = derive_declaration_index_id(index)
+    if index.get("indexId") != expected_index_id:
+        raise EvidenceError("declaration index indexId does not match its lexical-entry projection")
+    source_id = derive_source_id(snapshot)
+    if snapshot.get("sourceId") != source_id:
+        raise EvidenceError("snapshot.sourceId does not match the recorded file tree")
+    if index.get("sourceId") != source_id:
+        raise EvidenceError("declaration index sourceId does not match the captured source snapshot")
+    source_files = {record["path"]: record["sha256"] for record in _normalised_file_records(snapshot.get("files"))}
+    for entry in declaration_index_identity_projection(index)["entries"]:
+        path = str(entry["path"])
+        if source_files.get(path) != entry["sourceSha256"]:
+            raise EvidenceError(f"declaration index entry does not match snapshot source digest: {path}")
+    if project_root is not None:
+        generated = build_declaration_index(project_root, snapshot)
+        if generated != index:
+            raise EvidenceError("declaration index does not match the current project's lexical source scan")
+
+
+def load_declaration_index(path: Path) -> dict[str, Any]:
+    index = _object(_read_json(path), "declaration index")
+    expected = derive_declaration_index_id(index)
+    if index.get("indexId") != expected:
+        raise EvidenceError("declaration index indexId does not match its lexical-entry projection")
+    return index
+
+
+def write_declaration_index(path: Path, index: dict[str, Any]) -> None:
+    if path.exists():
+        raise EvidenceError(f"declaration index output already exists: {path}")
+    expected = derive_declaration_index_id(index)
+    if index.get("indexId") != expected:
+        raise EvidenceError("declaration index indexId does not match its lexical-entry projection")
+    _write_json(path, index)
+
+
+def query_declaration_index(
+    index: dict[str, Any], *, exact: str | None = None, prefix: str | None = None, kinds: Iterable[str] = ()
+) -> list[dict[str, Any]]:
+    """Return deterministic lexical candidates without adding typechecking claims."""
+
+    if exact is not None and prefix is not None:
+        raise EvidenceError("declaration-index query accepts at most one of exact and prefix")
+    expected = derive_declaration_index_id(index)
+    if index.get("indexId") != expected:
+        raise EvidenceError("declaration index indexId does not match its lexical-entry projection")
+    requested_kinds = set(kinds)
+    unsupported_kinds = requested_kinds - DECLARATION_KINDS
+    if unsupported_kinds:
+        raise EvidenceError(f"unsupported declaration-index kinds: {', '.join(sorted(unsupported_kinds))}")
+    matches: list[dict[str, Any]] = []
+    for entry in declaration_index_identity_projection(index)["entries"]:
+        name = str(entry["qualifiedName"])
+        if exact is not None and name != exact:
+            continue
+        if prefix is not None and not name.startswith(prefix):
+            continue
+        if requested_kinds and entry["kind"] not in requested_kinds:
+            continue
+        matches.append(entry)
+    return sorted(matches, key=lambda entry: (str(entry["qualifiedName"]), str(entry["kind"]), str(entry["path"]), int(entry["line"])))
 
 
 def parse_agda_library_file(path: Path, project_root: Path) -> dict[str, Any]:
@@ -740,6 +1026,61 @@ def _read_json(path: Path) -> Any:
         raise EvidenceError(f"cannot read JSON file {path}: {error}") from error
 
 
+def _declaration_index_reference(index_path: Path, index: dict[str, Any]) -> dict[str, Any]:
+    """Wrap a verified lexical index as an optional bundle component."""
+
+    return {
+        "format": INDEX_REFERENCE_FORMAT,
+        "sourcePathReference": _path_reference(index_path.resolve()),
+        "inputSha256": f"sha256:{sha256_file(index_path)}",
+        "index": index,
+    }
+
+
+def bound_declaration_index(reference: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate an index-ref component and return its semantic v1 index when present.
+
+    The former opaque ``content`` shape remains byte-integrity-compatible so old
+    bundles can still verify. New captures always use the source-bound ``index``
+    shape, which this function validates against snapshot metadata.
+    """
+
+    if reference.get("format") != INDEX_REFERENCE_FORMAT:
+        raise EvidenceError("index-ref has an unrecognized format")
+    if not isinstance(reference.get("sourcePathReference"), str) or not reference["sourcePathReference"]:
+        raise EvidenceError("index-ref.sourcePathReference must be a non-empty string")
+    _digest_identifier(reference.get("inputSha256"), "index-ref.inputSha256")
+    fields = set(reference)
+    legacy_fields = {"format", "sourcePathReference", "inputSha256", "content"}
+    semantic_fields = {"format", "sourcePathReference", "inputSha256", "index"}
+    if fields == legacy_fields:
+        return None
+    if fields != semantic_fields:
+        raise EvidenceError("index-ref must use either the legacy content or source-bound index shape")
+    index = _object(reference.get("index"), "index-ref.index")
+    validate_declaration_index(index, snapshot)
+    return index
+
+
+def declaration_index_from_bundle(bundle_directory: Path) -> dict[str, Any]:
+    """Load a verified source-bound lexical index from an evidence bundle."""
+
+    problems = verify_bundle(bundle_directory)
+    if problems:
+        raise EvidenceError(f"bundle cannot supply a declaration index: {'; '.join(problems)}")
+    root = bundle_directory.resolve()
+    bundle = _object(_read_json(root / "bundle.json"), "bundle.json")
+    components = _object(bundle.get("components"), "bundle.json components")
+    if "index-ref.json" not in components:
+        raise EvidenceError("bundle does not contain a declaration index")
+    reference = _object(_read_json(root / "index-ref.json"), "index-ref.json")
+    snapshot = _object(_read_json(root / "snapshot.json"), "snapshot.json")
+    index = bound_declaration_index(reference, snapshot)
+    if index is None:
+        raise EvidenceError("bundle contains a legacy opaque index reference, not a source-bound declaration index")
+    return index
+
+
 def load_resolution_observation(path: Path) -> dict[str, Any]:
     """Read and semantically verify a resolution handoff before it enters a bundle."""
 
@@ -802,10 +1143,15 @@ def capture_bundle(
         if resolution_observation.get("resolutionId") != expected_resolution_id:
             raise EvidenceError("supplied resolution observation does not match its visible-resolution projection")
         validate_resolution_for_project(root, resolution_observation)
-    output.mkdir(parents=True, exist_ok=True)
-
     snapshot, files = build_snapshot(root)
     resolution = resolution_observation if resolution_observation is not None else build_resolution(root, agda_binary)
+    index_component: dict[str, Any] | None = None
+    if index_reference is not None:
+        index = load_declaration_index(index_reference)
+        validate_declaration_index(index, snapshot, root)
+        index_component = _declaration_index_reference(index_reference, index)
+
+    output.mkdir(parents=True, exist_ok=True)
     attestation, diagnostics = run_check(
         command,
         root,
@@ -827,14 +1173,8 @@ def capture_bundle(
         "attestation.json": attestation,
         "diagnostics.json": diagnostics,
     }
-    if index_reference is not None:
-        reference_payload = _read_json(index_reference)
-        components["index-ref.json"] = {
-            "format": INDEX_REFERENCE_FORMAT,
-            "sourcePathReference": _path_reference(index_reference.resolve()),
-            "inputSha256": f"sha256:{sha256_file(index_reference)}",
-            "content": reference_payload,
-        }
+    if index_component is not None:
+        components["index-ref.json"] = index_component
 
     component_digests: dict[str, str] = {}
     for filename, payload in components.items():
@@ -1003,6 +1343,14 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
         problems.append(f"missing required core components: {', '.join(missing_core_components)}")
         return problems
     problems.extend(_verify_enhanced_identities(payloads, bundle))
+    if "index-ref.json" in payloads:
+        try:
+            bound_declaration_index(
+                _object(payloads["index-ref.json"], "index-ref.json"),
+                _object(payloads["snapshot.json"], "snapshot.json"),
+            )
+        except EvidenceError as error:
+            problems.append(str(error))
     return problems
 
 

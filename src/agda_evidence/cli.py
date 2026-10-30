@@ -10,13 +10,18 @@ from typing import Sequence
 
 from . import __version__
 from .core import (
+    DECLARATION_KINDS,
     EvidenceError,
+    build_declaration_index,
     build_nix_resolution,
     capture_bundle,
     create_aggregate,
+    declaration_index_from_bundle,
     load_resolution_observation,
+    query_declaration_index,
     verify_aggregate,
     verify_bundle,
+    write_declaration_index,
     write_resolution_observation,
 )
 
@@ -32,7 +37,11 @@ def _capture_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPars
     parser.add_argument("--scope", default="explicit-project-check", help="human-readable scope for the supplied command")
     parser.add_argument("--timeout-seconds", type=int, default=600, help="maximum runtime for the supplied command")
     parser.add_argument("--max-output-bytes", type=int, default=262_144, help="maximum retained bytes per output stream")
-    parser.add_argument("--index-reference", type=Path, help="optional JSON declaration-index reference")
+    parser.add_argument(
+        "--index-reference",
+        type=Path,
+        help="optional source-bound declaration index built by 'index build'",
+    )
     parser.add_argument(
         "--resolution-file",
         type=Path,
@@ -62,6 +71,32 @@ def build_parser() -> argparse.ArgumentParser:
     nix_probe.add_argument("--output", type=Path, required=True, help="new JSON resolution observation file")
     nix_probe.add_argument("--nix-bin", default="nix", help="Nix executable to inspect (default: nix)")
     nix_probe.add_argument("--agda-bin", default="agda", help="Agda executable to inspect (default: agda)")
+
+    index = subparsers.add_parser(
+        "index",
+        help="build or query source-bound lexical declaration-discovery indexes",
+    )
+    index_subparsers = index.add_subparsers(dest="index_command", required=True)
+    index_build = index_subparsers.add_parser(
+        "build",
+        help="scan snapshot-visible Agda source for lexical declaration candidates",
+    )
+    index_build.add_argument("--project-root", type=Path, required=True, help="project directory to scan")
+    index_build.add_argument("--output", type=Path, required=True, help="new JSON index output outside the project")
+    index_query = index_subparsers.add_parser(
+        "query",
+        help="query the verified source-bound lexical index in an evidence bundle",
+    )
+    index_query.add_argument("bundle", type=Path, help="directory containing a bundle with index-ref.json")
+    index_filter = index_query.add_mutually_exclusive_group()
+    index_filter.add_argument("--exact", help="return candidates with this exact qualified name")
+    index_filter.add_argument("--prefix", help="return candidates whose qualified name has this prefix")
+    index_query.add_argument(
+        "--kind",
+        action="append",
+        choices=sorted(DECLARATION_KINDS),
+        help="candidate kind to retain; repeat to select several kinds",
+    )
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -138,6 +173,51 @@ def _probe_nix_resolution(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _index_build(arguments: argparse.Namespace) -> int:
+    root = arguments.project_root.resolve()
+    output = arguments.output.resolve()
+    if output.is_relative_to(root):
+        raise EvidenceError("declaration index output must be outside the project root")
+    index = build_declaration_index(root)
+    write_declaration_index(output, index)
+    print(
+        json.dumps(
+            {
+                "indexId": index["indexId"],
+                "sourceId": index["sourceId"],
+                "entryCount": len(index["entries"]),
+                "output": str(output),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _index_query(arguments: argparse.Namespace) -> int:
+    index = declaration_index_from_bundle(arguments.bundle)
+    entries = query_declaration_index(
+        index,
+        exact=arguments.exact,
+        prefix=arguments.prefix,
+        kinds=arguments.kind or (),
+    )
+    print(
+        json.dumps(
+            {
+                "indexId": index["indexId"],
+                "sourceId": index["sourceId"],
+                "entries": entries,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def _verify(arguments: argparse.Namespace) -> int:
     problems = verify_bundle(arguments.bundle)
     if problems:
@@ -197,6 +277,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _capture(arguments)
         if arguments.subcommand == "probe-nix-resolution":
             return _probe_nix_resolution(arguments)
+        if arguments.subcommand == "index" and arguments.index_command == "build":
+            return _index_build(arguments)
+        if arguments.subcommand == "index" and arguments.index_command == "query":
+            return _index_query(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":

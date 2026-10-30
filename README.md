@@ -67,6 +67,19 @@ agda-evidence aggregate verify /tmp/project.aggregate
 
 An aggregate says only that every included child command passed for the shared `sourceId`; it does not prove that those lanes are a project’s complete CI matrix. See the [aggregate format guide](docs/aggregate.md).
 
+## Discover source-bound declaration candidates
+
+Build a deterministic lexical index from snapshot-visible `.agda` and fenced literate Agda source, attach it to a capture, and query that verified bundle:
+
+```sh
+agda-evidence index build --project-root ./library --output /tmp/library.index.json
+agda-evidence capture --project-root ./library --output /tmp/library.evidence \
+  --index-reference /tmp/library.index.json -- make check
+agda-evidence index query /tmp/library.evidence --prefix Data.Nat
+```
+
+The index is deliberately lexical: it finds documented source-text candidates, not typechecked, resolved, exported, or complete declarations. Capture rejects an index that is stale or does not exactly match the captured source scan. See the [declaration-index guide](docs/declaration-index.md).
+
 ## Verify a bundle
 
 ```sh
@@ -84,7 +97,7 @@ Verification recomputes every component digest and the bundle identifier. It doe
 | `resolution.json` | Visible partial resolution evidence and stable `resolutionId`. |
 | `attestation.json` | Explicit command, outcome, source/resolution subjects, and time-specific `attestationId`. |
 | `diagnostics.json` | Bounded process stdout/stderr; v0.1 does not claim a structured Agda parser. |
-| `index-ref.json` | Optional reference to externally produced declaration-index metadata. |
+| `index-ref.json` | Optional source-bound lexical declaration index (or byte-integrity-compatible legacy opaque reference). |
 
 Read the [v1 schema notes](docs/schema.md) before publishing a bundle. Bundle contents can include source, command arguments, and tool output; inspect them before sharing.
 

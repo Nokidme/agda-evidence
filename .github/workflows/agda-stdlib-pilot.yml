@@ -61,12 +61,19 @@ jobs:
           git -C agda-stdlib checkout --detach "$STDLIB_REF"
           git -C agda-stdlib status --short
 
+      - name: Build a source-bound declaration index
+        run: |
+          agda-evidence index build \
+            --project-root "$GITHUB_WORKSPACE/agda-stdlib" \
+            --output "$RUNNER_TEMP/agda-stdlib.index.json"
+
       - name: Capture the upstream test-stdlib CI gate
         run: |
           agda-evidence capture \
             --project-root "$GITHUB_WORKSPACE/agda-stdlib" \
             --output "$GITHUB_WORKSPACE/agda-stdlib.evidence" \
             --agda-bin agda \
+            --index-reference "$RUNNER_TEMP/agda-stdlib.index.json" \
             --scope "agda-stdlib upstream test-stdlib CI sequence at $STDLIB_REF" \
             --timeout-seconds 3600 \
             -- sh -eu -c '
@@ -75,6 +82,21 @@ jobs:
               agda -Werror +RTS -M5G -H3.5G -A128M -RTS -i. -isrc -idoc -WnoUserWarning Everything.agda
             '
           agda-evidence verify "$GITHUB_WORKSPACE/agda-stdlib.evidence"
+
+      - name: Query the verified source-bound declaration index
+        run: |
+          agda-evidence index query "$GITHUB_WORKSPACE/agda-stdlib.evidence" \
+            --prefix Data.Nat --kind module > "$RUNNER_TEMP/data-nat-modules.json"
+          RESULT="$RUNNER_TEMP/data-nat-modules.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path(os.environ["RESULT"]).read_text())
+          if not result["entries"]:
+              raise SystemExit("expected at least one Data.Nat lexical module candidate")
+          print(f"Verified source-bound index {result['indexId']} returned {len(result['entries'])} Data.Nat modules.")
+          PY
 
       - name: Require a green recorded gate
         run: |

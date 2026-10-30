@@ -136,6 +136,38 @@ class EvidenceCliTests(unittest.TestCase):
             self.assertEqual(set(reported["lanes"]), {"typecheck", "documentation"})
             self.assertEqual(self.run_cli("aggregate", "verify", str(aggregate)).returncode, 0)
 
+    def test_index_build_capture_and_query(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            project = self.make_project(temporary)
+            index = temporary / "project.index.json"
+            built = self.run_cli("index", "build", "--project-root", str(project), "--output", str(index))
+            self.assertEqual(built.returncode, 0, built.stderr)
+            index_report = json.loads(built.stdout)
+            self.assertGreaterEqual(index_report["entryCount"], 1)
+
+            bundle = temporary / "bundle"
+            captured = self.run_cli(
+                "capture",
+                "--project-root", str(project),
+                "--output", str(bundle),
+                "--index-reference", str(index),
+                "--",
+                sys.executable,
+                "check.py",
+            )
+            self.assertEqual(captured.returncode, 0, captured.stderr)
+            queried = self.run_cli("index", "query", str(bundle), "--exact", "Main", "--kind", "module")
+            self.assertEqual(queried.returncode, 0, queried.stderr)
+            query_report = json.loads(queried.stdout)
+            self.assertEqual([entry["qualifiedName"] for entry in query_report["entries"]], ["Main"])
+
+            rejected = self.run_cli(
+                "index", "build", "--project-root", str(project), "--output", str(project / "inside.index.json")
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("outside the project root", rejected.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

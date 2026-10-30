@@ -20,7 +20,7 @@ agda -Werror +RTS -M5G -H3.5G -A128M -RTS -i. -isrc -idoc \
 
 ## How to run it
 
-The repository provides a manual-only GitHub Actions workflow, **agda-stdlib pilot**. Its default input is the commit above. The workflow installs the same broad GHC/Cabal/Agda setup used by the upstream CI, captures the composite gate as an evidence bundle, uploads the bundle even when the gate is red, and fails the run unless the attestation outcome is `passed`.
+The repository provides a manual-only GitHub Actions workflow, **agda-stdlib pilot**. Its default input is the commit above. The workflow installs the same broad GHC/Cabal/Agda setup used by the upstream CI, builds a lexical declaration index outside the checkout, binds it to the captured snapshot, captures the composite gate as an evidence bundle, uploads the bundle even when the gate is red, and fails the run unless the attestation outcome is `passed`.
 
 The composite `sh -eu -c` command is intentional in v0.1. The reference CLI attests one explicit process invocation; `-e` ensures that a failure in the generator or either Agda typecheck makes that recorded composite gate fail. A later structured multi-step execution format can retain individual step records without weakening this v0.1 claim.
 
@@ -32,10 +32,11 @@ A successful run must have all of the following:
 - a `sourceId` matching the source tree at the selected standard-library commit under the documented snapshot policy;
 - a `resolutionId` that records the Agda 2.8.0 binary observation and visible partial resolution data;
 - successful local verification of the uploaded bundle before upload.
+- a source-bound index query returning at least one lexical `Data.Nat` module candidate from the verified bundle.
 
 A failed run is still useful pilot evidence. Its bundle records the same source/resolution observations, full bounded process output, and a red outcome. It must not be described as a successful typecheck.
 
-The current `resolutionId` remains partial. The pilot does not claim an archived dependency closure, offline replay, or that `--safe` covers every module: the gate separately checks an aggregate safe set and the complete aggregate set according to upstream’s own generator.
+The current `resolutionId` remains partial. The pilot does not claim an archived dependency closure, offline replay, or that `--safe` covers every module: the gate separately checks an aggregate safe set and the complete aggregate set according to upstream’s own generator. The attached index is lexical discovery metadata, not a claim that its candidates are typechecked, exported, or a complete symbol catalog.
 
 ## Initial result
 
