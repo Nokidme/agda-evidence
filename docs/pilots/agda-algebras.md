@@ -32,6 +32,10 @@ A green pilot attests that the explicit two-command Type-check library sequence 
 
 The workflow never runs `make check` from an already-entered Nix shell in the original checkout. Doing so could pass the original checkout’s `AGDA_DIR` and wrapper into the staged copy, which would weaken the isolation claim.
 
+## Initial result
+
+The first pinned run passed on 30 October 2026. Its independently verified identifiers and exact scope are recorded in [the initial result](agda-algebras-result-2026-10-30.md).
+
 ## Sources
 
 - [agda-algebras README](https://github.com/ualib/agda-algebras/blob/c7617677f0e4233939660aa42e7fafb2f68e95e0/README.md)
