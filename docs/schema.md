@@ -1,27 +1,43 @@
 # Evidence bundle v1
 
-A bundle is an immutable directory of canonical JSON component files plus `bundle.json`. Each listed component is addressed by the SHA-256 digest of its canonical JSON representation. `bundleId` is the SHA-256 digest of the bundle format and its component-digest map. The top-level schema is [`../schemas/evidence-bundle-v1.schema.json`](../schemas/evidence-bundle-v1.schema.json).
+A bundle is an immutable directory of canonical JSON component files plus `bundle.json`. Each listed component is addressed by the SHA-256 digest of its complete canonical JSON payload. The top-level manifest format is described by [`../schemas/evidence-bundle-v1.schema.json`](../schemas/evidence-bundle-v1.schema.json).
 
-## Required components
+The format deliberately distinguishes a stable comparison value from a time-specific evidence artifact. A reader must not use a whole timestamped component, its component digest, or `bundleId` to decide whether two captures describe the same source tree or visible resolution context.
 
-`resolution.json` captures the visible Agda executable, root `.agda-lib` files, and available registry metadata. Its status is intentionally `partial`: v1 does not resolve, fetch, or prove a complete dependency closure.
+## Four identities
 
-`snapshot.json` captures regular project files as path, byte size, and SHA-256 digest. The reference implementation rejects symlinks and excludes Git metadata, common build/cache directories, and `.agdai` files. It therefore captures source/configuration evidence, not generated interfaces.
+`sourceId` is the stable identity of the captured regular-file tree. It is also emitted as the compatibility field `sourceDigest`. Its preimage is the canonical object containing the tree algorithm and the sorted records `{path, sha256, size}`. It excludes capture time, checkout directory name, exclusion-policy description, toolchain data, diagnostics, and attestation data.
 
-`attestation.json` records the explicit command supplied by the caller, the declared scope, an isolated-copy execution mode, and outcome. `passed` means only that exact command exited successfully in the recorded staged source copy. It is not a claim about unrecorded targets, source meaning, or offline replayability.
+`resolutionId` is the stable identity of the **recorded visible resolution context**, not a proven dependency closure. Its preimage contains the partial-resolution status, the recorded Agda availability/version/binary digest observation, raw root `.agda-lib` file digests, and visible registry file digests. It excludes capture time, checkout directory name, opaque local-path references, convenience-parsed manifest fields, and human-readable limitations. It does not establish that every dependency was resolved, fetched, or archived.
 
-`diagnostics.json` contains bounded stdout/stderr and status metadata. v1 does not claim fully structured Agda diagnostics; parser adapters can add a later, separately versioned component.
+`attestationId` identifies a specific, time-bound check occurrence. Its preimage contains source and resolution subjects, the complete diagnostics digest, the exact ordered command, scope, execution settings, outcome, and all check timestamps. Changing the time, result, or retained process output therefore changes it.
 
-`index-ref.json` is optional. It binds externally produced declaration-index metadata to the bundle without making index extraction part of the core CLI.
+`bundleId` is the identity of the complete evidence artifact. It is the digest of the bundle format plus its complete component-digest map. Since each component digest covers its entire timestamp-bearing JSON payload, otherwise equivalent recaptures normally have different `bundleId` values. This is intentional: it protects the full evidence record, rather than serving as a source or environment comparison key.
 
-## Compatibility rules
+All identities use lowercase hexadecimal SHA-256 identifiers of the form `sha256:<64 hex characters>` and canonical JSON encoding used by the reference implementation.
 
-A v1 reader must reject a manifest whose `format` is not `agda-evidence/bundle-v1`, must recompute every listed component digest, and must recompute `bundleId`. Readers may ignore an unknown optional component only after verifying its digest. Writers must not overwrite a non-empty output directory.
+## Components
 
-Timestamps are evidence metadata and can differ between otherwise equivalent captures. Compare `snapshot.json` and `resolution.json` when deciding whether two captures describe the same source and visible environment.
+`resolution.json` contains the visible Agda executable observation, root `.agda-lib` data, available registry metadata, the explicit `resolutionStatus: "partial"`, and `resolutionId`.
+
+`snapshot.json` contains regular project files as path, byte size, and SHA-256 digest. The reference implementation rejects symlinks and excludes Git metadata, common build/cache directories, and `.agdai` files. It is source/configuration evidence, not generated interfaces, and contains `sourceDigest` plus `sourceId`.
+
+`attestation.json` records the explicit command, declared scope, isolated-copy execution mode, outcome, `subjects` linking the source and resolution identities, `diagnosticsDigest`, and `attestationId`. `passed` means only that exact command exited successfully in the recorded staged source copy. It does not prove the meaning of the source, unrecorded targets, or offline replayability.
+
+`diagnostics.json` holds bounded stdout/stderr and normalization metadata. v1 does not claim a complete structured Agda diagnostic parser. Its complete canonical payload is the value named by `attestation.diagnosticsDigest`.
+
+`index-ref.json` is optional. It binds externally produced declaration-index metadata to the artifact. It changes `bundleId` but must not change source, resolution, or attestation identities.
+
+## Verification and compatibility
+
+A reader must reject a manifest whose format is not `agda-evidence/bundle-v1`. It must verify every listed component digest and recompute `bundleId`. Enhanced bundles must contain `snapshot.json`, `resolution.json`, `attestation.json`, and `diagnostics.json`; the verifier recomputes the three derived identities, checks the attestation’s bindings, and checks that capture/check/bundle timestamps are causally ordered.
+
+A legacy v1 profile with none of `sourceId`, `resolutionId`, `subjects`, `diagnosticsDigest`, or `attestationId` is accepted for byte-integrity verification only. A mixed profile is rejected. A valid digest proves internal consistency, not authorship or trust: signatures and trusted transport are separate future work.
+
+Writers must not overwrite a non-empty output directory. Readers may ignore an unknown optional component only after verifying its listed digest.
 
 ## Privacy and preservation
 
-The reference implementation replaces absolute host paths in recorded resolution data with opaque path hashes. It does not remove sensitive information from project source, command arguments, or process output. Do not publish a bundle until its source, configuration, check command, and output have been reviewed.
+Absolute binary and registry paths are represented with opaque path hashes in the resolution component. The reference implementation does not remove sensitive information from source files, command arguments, environment-dependent tool output, or diagnostics. Review bundle contents before publishing.
 
 A re-fetchable dependency declaration is not an archived dependency closure. Claim offline replay only after the toolchain and authorized dependency closure have been preserved and tested.

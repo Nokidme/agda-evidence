@@ -10,6 +10,8 @@ This is a pre-alpha reference implementation of the v1 bundle contract. The core
 
 A passed bundle means only that the **recorded explicit command** exited successfully in an isolated copy of the recorded project source. It does not claim a full dependency closure, offline replayability, all-project coverage, or structured Agda diagnostics.
 
+The v1 profile distinguishes three comparison values: `sourceId` for the captured source tree, `resolutionId` for the visible partial resolution context, and `attestationId` for the time-specific command outcome. `bundleId` remains the identifier of the complete immutable artifact, so separate captures can have distinct bundle IDs even when their source and resolution IDs match.
+
 ## Install
 
 For development:
@@ -60,10 +62,10 @@ Verification recomputes every component digest and the bundle identifier. It doe
 
 | File | Meaning |
 | --- | --- |
-| `bundle.json` | Version, bundle identifier, and component-digest map. |
-| `snapshot.json` | Content-addressed regular source/configuration files. |
-| `resolution.json` | Visible Agda executable, project `.agda-lib` data, and available registry metadata. |
-| `attestation.json` | Explicit command, declared scope, isolated-copy mode, and outcome. |
+| `bundle.json` | Version, immutable artifact identifier, and component-digest map. |
+| `snapshot.json` | Content-addressed regular source/configuration files and stable `sourceId`. |
+| `resolution.json` | Visible partial resolution evidence and stable `resolutionId`. |
+| `attestation.json` | Explicit command, outcome, source/resolution subjects, and time-specific `attestationId`. |
 | `diagnostics.json` | Bounded process stdout/stderr; v0.1 does not claim a structured Agda parser. |
 | `index-ref.json` | Optional reference to externally produced declaration-index metadata. |
 
@@ -75,7 +77,7 @@ Read the [v1 schema notes](docs/schema.md) before publishing a bundle. Bundle co
 python -m unittest discover -s tests -v
 ```
 
-The first validation target is a common contract across `agda-stdlib`, `agda-algebras`, and the Cardano formal ledger. The core will use adapters only where project-specific conventions cannot fit the generic contract.
+The first validation target is a common contract across `agda-stdlib`, `agda-algebras`, and the Cardano formal ledger. The [agda-stdlib pilot](docs/pilots/agda-stdlib.md) pins and transcribes the project’s existing full-library CI gate in a manual-only workflow. The core will use adapters only where project-specific conventions cannot fit the generic contract.
 
 ## License
 

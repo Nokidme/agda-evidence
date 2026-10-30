@@ -1,0 +1,99 @@
+name: agda-stdlib pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      stdlib_ref:
+        description: Pinned agda/agda-stdlib commit to validate
+        required: true
+        default: 565739a4d82b8bb47d2f15cb99178db15ca60e9b
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Capture upstream test-stdlib gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AGDA_REF: tags/v2.8.0
+      GHC_VERSION: 9.12.2
+      CABAL_VERSION: 3.16.0.0
+      STDLIB_REF: ${{ inputs.stdlib_ref }}
+    steps:
+      - name: Check out agda-evidence
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agda-evidence
+        run: python -m pip install .
+
+      - name: Set up GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          cabal-update: true
+
+      - name: Put Cabal programs on PATH
+        run: echo "$HOME/.cabal/bin" >> "$GITHUB_PATH"
+
+      - name: Install Agda build helpers
+        run: cabal install alex happy --overwrite-policy=always
+
+      - name: Build the upstream-pinned Agda executable
+        run: |
+          git clone --depth 1 --branch "$AGDA_REF" https://github.com/agda/agda.git agda
+          cd agda
+          mkdir -p doc
+          touch doc/user-manual.pdf
+          cabal v1-install --ghc-options='-O1 +RTS -M6G -RTS'
+
+      - name: Check out the pinned standard-library source
+        run: |
+          git clone https://github.com/agda/agda-stdlib.git agda-stdlib
+          git -C agda-stdlib checkout --detach "$STDLIB_REF"
+          git -C agda-stdlib status --short
+
+      - name: Capture the upstream test-stdlib CI gate
+        run: |
+          agda-evidence capture \
+            --project-root "$GITHUB_WORKSPACE/agda-stdlib" \
+            --output "$GITHUB_WORKSPACE/agda-stdlib.evidence" \
+            --agda-bin agda \
+            --scope "agda-stdlib upstream test-stdlib CI sequence at $STDLIB_REF" \
+            --timeout-seconds 3600 \
+            -- sh -eu -c '
+              cabal run GenerateEverything -- --include-deprecated
+              agda -Werror +RTS -M5G -H3.5G -A128M -RTS -i. -isrc -idoc -WnoUserWarning --safe EverythingSafe.agda
+              agda -Werror +RTS -M5G -H3.5G -A128M -RTS -i. -isrc -idoc -WnoUserWarning Everything.agda
+            '
+          agda-evidence verify "$GITHUB_WORKSPACE/agda-stdlib.evidence"
+
+      - name: Require a green recorded gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          attestation = json.loads(Path("agda-stdlib.evidence/attestation.json").read_text())
+          outcome = attestation["outcome"]
+          if outcome["status"] != "passed":
+              raise SystemExit(f"Recorded standard-library gate did not pass: {outcome}")
+          print(f"Recorded standard-library gate passed: {attestation['attestationId']}")
+          PY
+
+      - name: Upload evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agda-stdlib-evidence-${{ inputs.stdlib_ref }}
+          path: agda-stdlib.evidence
+          if-no-files-found: error
+          retention-days: 30

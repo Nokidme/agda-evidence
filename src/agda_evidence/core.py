@@ -24,6 +24,8 @@ RESOLUTION_FORMAT = "agda-evidence/resolution-v1"
 ATTESTATION_FORMAT = "agda-evidence/attestation-v1"
 DIAGNOSTICS_FORMAT = "agda-evidence/captured-process-output-v1"
 INDEX_REFERENCE_FORMAT = "agda-evidence/index-reference-v1"
+RESOLUTION_IDENTITY_FORMAT = "agda-evidence/resolution-identity-v1"
+ATTESTATION_IDENTITY_FORMAT = "agda-evidence/attestation-identity-v1"
 
 COMPONENT_FILENAMES = (
     "resolution.json",
@@ -81,6 +83,187 @@ def digest_bytes(value: bytes) -> str:
 
 def digest_value(value: Any) -> str:
     return digest_bytes(canonical_json_bytes(value))
+
+
+def _digest_identifier(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        raise EvidenceError(f"{field} must be a sha256 identifier")
+    digest = value.removeprefix("sha256:")
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise EvidenceError(f"{field} must be a lowercase sha256 identifier")
+    return value
+
+
+def _object(value: Any, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{field} must be an object")
+    return value
+
+
+def _normalised_file_records(files: Any) -> list[dict[str, Any]]:
+    if not isinstance(files, list):
+        raise EvidenceError("snapshot.files must be an array")
+    records: list[dict[str, Any]] = []
+    paths: set[str] = set()
+    for index, value in enumerate(files):
+        record = _object(value, f"snapshot.files[{index}]")
+        path = record.get("path")
+        size = record.get("size")
+        if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+            raise EvidenceError(f"snapshot.files[{index}].path must be a non-absolute slash-separated path")
+        if path in paths:
+            raise EvidenceError(f"snapshot.files contains duplicate path: {path}")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise EvidenceError(f"snapshot.files[{index}].size must be a non-negative integer")
+        paths.add(path)
+        records.append({"path": path, "sha256": _digest_identifier(record.get("sha256"), f"snapshot.files[{index}].sha256"), "size": size})
+    return sorted(records, key=lambda record: record["path"])
+
+
+def derive_source_id(snapshot: dict[str, Any]) -> str:
+    """Return the stable source-tree identity for a snapshot payload.
+
+    Capture time, checkout directory name, and capture policy documentation are
+    intentionally absent: this identifier answers only whether the recorded
+    regular-file tree is byte-for-byte the same under the current file-listing
+    algorithm.
+    """
+
+    algorithm = snapshot.get("treeAlgorithm")
+    if not isinstance(algorithm, str) or not algorithm:
+        raise EvidenceError("snapshot.treeAlgorithm must be a non-empty string")
+    identity = {"algorithm": algorithm, "files": _normalised_file_records(snapshot.get("files"))}
+    return f"sha256:{digest_value(identity)}"
+
+
+def _normalised_library_records(library_files: Any) -> list[dict[str, str]]:
+    if not isinstance(library_files, list):
+        raise EvidenceError("resolution.projectLibraryFiles must be an array")
+    records: list[dict[str, str]] = []
+    paths: set[str] = set()
+    for index, value in enumerate(library_files):
+        record = _object(value, f"resolution.projectLibraryFiles[{index}]")
+        path = record.get("path")
+        if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+            raise EvidenceError(f"resolution.projectLibraryFiles[{index}].path must be a relative path")
+        if path in paths:
+            raise EvidenceError(f"resolution.projectLibraryFiles contains duplicate path: {path}")
+        paths.add(path)
+        records.append({"path": path, "sha256": _digest_identifier(record.get("sha256"), f"resolution.projectLibraryFiles[{index}].sha256")})
+    return sorted(records, key=lambda record: record["path"])
+
+
+def resolution_identity_projection(resolution: dict[str, Any]) -> dict[str, Any]:
+    """Return the stable, host-path-free projection of visible resolution data."""
+
+    status = resolution.get("resolutionStatus")
+    if not isinstance(status, str) or not status:
+        raise EvidenceError("resolution.resolutionStatus must be a non-empty string")
+    agda = _object(resolution.get("agda"), "resolution.agda")
+    requested = agda.get("requested")
+    available = agda.get("available")
+    if not isinstance(requested, str) or not requested or not isinstance(available, bool):
+        raise EvidenceError("resolution.agda must contain requested and available fields")
+    agda_projection: dict[str, Any] = {"requested": requested, "available": available}
+    if available:
+        binary_digest = agda.get("binarySha256")
+        if binary_digest is not None:
+            agda_projection["binarySha256"] = _digest_identifier(binary_digest, "resolution.agda.binarySha256")
+        version = _object(agda.get("version"), "resolution.agda.version")
+        agda_projection["version"] = version
+    else:
+        reason = agda.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise EvidenceError("unavailable resolution.agda must contain a reason")
+        agda_projection["reason"] = reason
+
+    registry = _object(resolution.get("registry"), "resolution.registry")
+    registry_available = registry.get("available")
+    if not isinstance(registry_available, bool):
+        raise EvidenceError("resolution.registry.available must be boolean")
+    registry_projection: dict[str, Any] = {"available": registry_available}
+    if registry_available:
+        environment = registry.get("agdaDirEnvironment")
+        if environment not in {"set", "unset"}:
+            raise EvidenceError("resolution.registry.agdaDirEnvironment must be set or unset")
+        registries = registry.get("registries")
+        if not isinstance(registries, list):
+            raise EvidenceError("resolution.registry.registries must be an array")
+        records: list[dict[str, str]] = []
+        names: set[str] = set()
+        for index, value in enumerate(registries):
+            record = _object(value, f"resolution.registry.registries[{index}]")
+            name = record.get("name")
+            if not isinstance(name, str) or not name:
+                raise EvidenceError(f"resolution.registry.registries[{index}].name must be a non-empty string")
+            if name in names:
+                raise EvidenceError(f"resolution.registry.registries contains duplicate name: {name}")
+            names.add(name)
+            records.append({"name": name, "sha256": _digest_identifier(record.get("sha256"), f"resolution.registry.registries[{index}].sha256")})
+        registry_projection["agdaDirEnvironment"] = environment
+        registry_projection["registries"] = sorted(records, key=lambda record: record["name"])
+    else:
+        reason = registry.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise EvidenceError("unavailable resolution.registry must contain a reason")
+        registry_projection["reason"] = reason
+
+    return {
+        "format": RESOLUTION_IDENTITY_FORMAT,
+        "resolutionStatus": status,
+        "agda": agda_projection,
+        "projectLibraryFiles": _normalised_library_records(resolution.get("projectLibraryFiles")),
+        "registry": registry_projection,
+    }
+
+
+def derive_resolution_id(resolution: dict[str, Any]) -> str:
+    return f"sha256:{digest_value(resolution_identity_projection(resolution))}"
+
+
+def derive_diagnostics_digest(diagnostics: dict[str, Any]) -> str:
+    if diagnostics.get("format") != DIAGNOSTICS_FORMAT:
+        raise EvidenceError("diagnostics has an unrecognized format")
+    return f"sha256:{digest_value(diagnostics)}"
+
+
+def attestation_identity_projection(attestation: dict[str, Any]) -> dict[str, Any]:
+    """Return the time-specific identity projection for a check occurrence."""
+
+    if attestation.get("format") != ATTESTATION_FORMAT:
+        raise EvidenceError("attestation has an unrecognized format")
+    subjects = _object(attestation.get("subjects"), "attestation.subjects")
+    subject_projection = {
+        "sourceId": _digest_identifier(subjects.get("sourceId"), "attestation.subjects.sourceId"),
+        "resolutionId": _digest_identifier(subjects.get("resolutionId"), "attestation.subjects.resolutionId"),
+    }
+    diagnostics_digest = _digest_identifier(attestation.get("diagnosticsDigest"), "attestation.diagnosticsDigest")
+    command = attestation.get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(argument, str) for argument in command):
+        raise EvidenceError("attestation.command must be a non-empty string array")
+    scope = attestation.get("scope")
+    working_directory = attestation.get("workingDirectory")
+    recorded_at = attestation.get("recordedAt")
+    if not isinstance(scope, str) or not scope or not isinstance(working_directory, str) or not isinstance(recorded_at, str):
+        raise EvidenceError("attestation scope, workingDirectory, and recordedAt must be strings")
+    execution = _object(attestation.get("execution"), "attestation.execution")
+    outcome = _object(attestation.get("outcome"), "attestation.outcome")
+    return {
+        "format": ATTESTATION_IDENTITY_FORMAT,
+        "attestationFormat": ATTESTATION_FORMAT,
+        "subjects": subject_projection,
+        "diagnosticsDigest": diagnostics_digest,
+        "scope": scope,
+        "command": command,
+        "workingDirectory": working_directory,
+        "execution": execution,
+        "outcome": outcome,
+        "recordedAt": recorded_at,
+    }
+
+
+def derive_attestation_id(attestation: dict[str, Any]) -> str:
+    return f"sha256:{digest_value(attestation_identity_projection(attestation))}"
 
 
 def sha256_file(path: Path) -> str:
@@ -155,23 +338,22 @@ def iter_project_files(project_root: Path) -> list[FileEntry]:
 def build_snapshot(project_root: Path) -> tuple[dict[str, Any], list[FileEntry]]:
     files = iter_project_files(project_root)
     file_records = [entry.as_dict() for entry in files]
-    tree_digest = digest_value({"algorithm": "sha256", "files": file_records})
-    return (
-        {
-            "format": SNAPSHOT_FORMAT,
-            "capturedAt": utc_now(),
-            "rootName": project_root.resolve().name,
-            "treeAlgorithm": "sha256",
-            "sourceDigest": f"sha256:{tree_digest}",
-            "files": file_records,
-            "excludes": {
-                "directoryNames": sorted(IGNORED_DIRECTORY_NAMES),
-                "suffixes": sorted(IGNORED_SUFFIXES),
-                "symlinks": "rejected",
-            },
+    snapshot = {
+        "format": SNAPSHOT_FORMAT,
+        "capturedAt": utc_now(),
+        "rootName": project_root.resolve().name,
+        "treeAlgorithm": "sha256",
+        "files": file_records,
+        "excludes": {
+            "directoryNames": sorted(IGNORED_DIRECTORY_NAMES),
+            "suffixes": sorted(IGNORED_SUFFIXES),
+            "symlinks": "rejected",
         },
-        files,
-    )
+    }
+    source_id = derive_source_id(snapshot)
+    snapshot["sourceDigest"] = source_id
+    snapshot["sourceId"] = source_id
+    return snapshot, files
 
 
 def parse_agda_library_file(path: Path, project_root: Path) -> dict[str, Any]:
@@ -239,16 +421,25 @@ def _path_reference(path: Path) -> str:
     return f"path-sha256:{digest_bytes(str(path).encode('utf-8'))}"
 
 
+def _binary_request_reference(requested: str) -> str:
+    """Keep a command name readable but do not disclose an absolute binary path."""
+
+    expanded = Path(requested).expanduser()
+    if expanded.is_absolute():
+        return _path_reference(expanded)
+    return requested
+
+
 def inspect_agda(agda_binary: str) -> dict[str, Any]:
     resolved = shutil.which(agda_binary)
     if not resolved:
-        return {"requested": agda_binary, "available": False, "reason": "not-found"}
+        return {"requested": _binary_request_reference(agda_binary), "available": False, "reason": "not-found"}
 
     binary_path = Path(resolved).resolve()
     version = _run_small_command([str(binary_path), "--version"])
     app_directory = _run_small_command([str(binary_path), "--print-agda-app-dir"])
     result: dict[str, Any] = {
-        "requested": agda_binary,
+        "requested": _binary_request_reference(agda_binary),
         "available": True,
         "binaryPathReference": _path_reference(binary_path),
         "binarySha256": f"sha256:{sha256_file(binary_path)}" if binary_path.is_file() else None,
@@ -303,7 +494,7 @@ def build_resolution(project_root: Path, agda_binary: str) -> dict[str, Any]:
     root = project_root.resolve()
     library_files = sorted(root.glob("*.agda-lib"))
     agda_info = inspect_agda(agda_binary)
-    return {
+    resolution = {
         "format": RESOLUTION_FORMAT,
         "capturedAt": utc_now(),
         "projectRootName": root.name,
@@ -316,6 +507,8 @@ def build_resolution(project_root: Path, agda_binary: str) -> dict[str, Any]:
             "Host paths are replaced with stable opaque references to avoid leaking local filesystem layout.",
         ],
     }
+    resolution["resolutionId"] = derive_resolution_id(resolution)
+    return resolution
 
 
 def _copy_snapshot(project_root: Path, files: Iterable[FileEntry], destination: Path) -> None:
@@ -471,6 +664,12 @@ def capture_bundle(
         max_output_bytes=max_output_bytes,
         scope=scope,
     )
+    attestation["subjects"] = {
+        "sourceId": snapshot["sourceId"],
+        "resolutionId": resolution["resolutionId"],
+    }
+    attestation["diagnosticsDigest"] = derive_diagnostics_digest(diagnostics)
+    attestation["attestationId"] = derive_attestation_id(attestation)
 
     components: dict[str, Any] = {
         "resolution.json": resolution,
@@ -511,6 +710,106 @@ def capture_bundle(
     return bundle
 
 
+CORE_COMPONENT_FILENAMES = {"snapshot.json", "resolution.json", "attestation.json", "diagnostics.json"}
+
+
+def _parse_timestamp(value: Any, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise EvidenceError(f"{field} must be an RFC 3339 timestamp string")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise EvidenceError(f"{field} must be an RFC 3339 timestamp string") from error
+    if parsed.tzinfo is None:
+        raise EvidenceError(f"{field} must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _verify_enhanced_timestamps(
+    snapshot: dict[str, Any],
+    resolution: dict[str, Any],
+    attestation: dict[str, Any],
+    bundle: dict[str, Any],
+) -> list[str]:
+    try:
+        snapshot_at = _parse_timestamp(snapshot.get("capturedAt"), "snapshot.capturedAt")
+        resolution_at = _parse_timestamp(resolution.get("capturedAt"), "resolution.capturedAt")
+        outcome = _object(attestation.get("outcome"), "attestation.outcome")
+        started_at = _parse_timestamp(outcome.get("startedAt"), "attestation.outcome.startedAt")
+        finished_at = _parse_timestamp(outcome.get("finishedAt"), "attestation.outcome.finishedAt")
+        recorded_at = _parse_timestamp(attestation.get("recordedAt"), "attestation.recordedAt")
+        bundle_at = _parse_timestamp(bundle.get("createdAt"), "bundle.createdAt")
+    except EvidenceError as error:
+        return [str(error)]
+
+    problems: list[str] = []
+    if snapshot_at > started_at:
+        problems.append("snapshot.capturedAt is later than the check start")
+    if resolution_at > started_at:
+        problems.append("resolution.capturedAt is later than the check start")
+    if started_at > finished_at:
+        problems.append("attestation check start is later than its finish")
+    if finished_at > recorded_at:
+        problems.append("attestation.recordedAt is earlier than the check finish")
+    if recorded_at > bundle_at:
+        problems.append("bundle.createdAt is earlier than attestation.recordedAt")
+    return problems
+
+
+def _verify_enhanced_identities(
+    payloads: dict[str, Any], bundle: dict[str, Any]
+) -> list[str]:
+    try:
+        snapshot = _object(payloads["snapshot.json"], "snapshot.json")
+        resolution = _object(payloads["resolution.json"], "resolution.json")
+        attestation = _object(payloads["attestation.json"], "attestation.json")
+        diagnostics = _object(payloads["diagnostics.json"], "diagnostics.json")
+    except EvidenceError as error:
+        return [str(error)]
+    enhanced_fields = [
+        "sourceId" in snapshot,
+        "resolutionId" in resolution,
+        "subjects" in attestation,
+        "diagnosticsDigest" in attestation,
+        "attestationId" in attestation,
+    ]
+    if not any(enhanced_fields):
+        return []
+    if not all(enhanced_fields):
+        return ["bundle has a partial enhanced identity profile"]
+
+    problems: list[str] = []
+    try:
+        source_id = derive_source_id(snapshot)
+        if snapshot.get("sourceDigest") != source_id:
+            problems.append("snapshot.sourceDigest does not match the recorded file tree")
+        if snapshot.get("sourceId") != source_id:
+            problems.append("snapshot.sourceId does not match the recorded file tree")
+
+        resolution_id = derive_resolution_id(resolution)
+        if resolution.get("resolutionId") != resolution_id:
+            problems.append("resolution.resolutionId does not match its visible-resolution projection")
+
+        diagnostics_digest = derive_diagnostics_digest(diagnostics)
+        if attestation.get("diagnosticsDigest") != diagnostics_digest:
+            problems.append("attestation.diagnosticsDigest does not match diagnostics.json")
+
+        subjects = _object(attestation.get("subjects"), "attestation.subjects")
+        if subjects.get("sourceId") != source_id:
+            problems.append("attestation.subjects.sourceId does not match snapshot.sourceId")
+        if subjects.get("resolutionId") != resolution_id:
+            problems.append("attestation.subjects.resolutionId does not match resolution.resolutionId")
+
+        attestation_id = derive_attestation_id(attestation)
+        if attestation.get("attestationId") != attestation_id:
+            problems.append("attestation.attestationId does not match its time-specific projection")
+    except EvidenceError as error:
+        problems.append(str(error))
+        return problems
+
+    return problems + _verify_enhanced_timestamps(snapshot, resolution, attestation, bundle)
+
+
 def verify_bundle(bundle_directory: Path) -> list[str]:
     root = bundle_directory.resolve()
     problems: list[str] = []
@@ -525,6 +824,7 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
     if not isinstance(components, dict):
         return problems + ["bundle.json does not contain a components object"]
 
+    payloads: dict[str, Any] = {}
     for filename, expected in sorted(components.items()):
         if not isinstance(filename, str) or "/" in filename or "\\" in filename:
             problems.append(f"unsafe component filename: {filename!r}")
@@ -538,6 +838,7 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
         except EvidenceError as error:
             problems.append(str(error))
             continue
+        payloads[filename] = payload
         actual = f"sha256:{digest_value(payload)}"
         if actual != expected:
             problems.append(f"digest mismatch for {filename}: expected {expected}, got {actual}")
@@ -546,4 +847,10 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
     expected_bundle_id = f"sha256:{digest_value(identity)}"
     if bundle.get("bundleId") != expected_bundle_id:
         problems.append("bundleId does not match the listed component digests")
+
+    missing_core_components = sorted(CORE_COMPONENT_FILENAMES - set(payloads))
+    if missing_core_components:
+        problems.append(f"missing required core components: {', '.join(missing_core_components)}")
+        return problems
+    problems.extend(_verify_enhanced_identities(payloads, bundle))
     return problems

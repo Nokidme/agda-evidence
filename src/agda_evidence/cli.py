@@ -61,7 +61,21 @@ def _capture(arguments: argparse.Namespace) -> int:
     )
     outcome_path = arguments.output / "attestation.json"
     attestation = json.loads(outcome_path.read_text(encoding="utf-8"))
-    print(json.dumps({"bundleId": bundle["bundleId"], "outcome": attestation["outcome"]}, indent=2, sort_keys=True))
+    snapshot = json.loads((arguments.output / "snapshot.json").read_text(encoding="utf-8"))
+    resolution = json.loads((arguments.output / "resolution.json").read_text(encoding="utf-8"))
+    print(
+        json.dumps(
+            {
+                "bundleId": bundle["bundleId"],
+                "sourceId": snapshot["sourceId"],
+                "resolutionId": resolution["resolutionId"],
+                "attestationId": attestation["attestationId"],
+                "outcome": attestation["outcome"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
