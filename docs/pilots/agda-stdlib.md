@@ -42,6 +42,10 @@ The current `resolutionId` remains partial. The pilot does not claim an archived
 
 The first pinned run passed on 30 October 2026. Its independently verified identifiers and the scope of its claim are recorded in [the initial result](agda-stdlib-result-2026-10-30.md).
 
+## Source-index result
+
+The follow-up pinned run attached and independently verified a source-bound lexical declaration index while preserving the same upstream typecheck gate. Its index identifier, query result, and boundaries are recorded in [the source-index result](agda-stdlib-index-result-2026-10-30.md).
+
 ## Sources
 
 - [agda-stdlib Ubuntu CI](https://github.com/agda/agda-stdlib/blob/master/.github/workflows/ci-ubuntu.yml)
