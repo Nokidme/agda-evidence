@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      AGDA_REF: tags/v2.8.0
+      AGDA_REF: v2.8.0
       GHC_VERSION: 9.12.2
       CABAL_VERSION: 3.16.0.0
       STDLIB_REF: ${{ inputs.stdlib_ref }}
@@ -95,5 +95,5 @@ jobs:
         with:
           name: agda-stdlib-evidence-${{ inputs.stdlib_ref }}
           path: agda-stdlib.evidence
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
