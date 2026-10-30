@@ -41,6 +41,10 @@ A green pilot says only that the recorded formal-ledger Nix derivation passed fo
 
 It also does not cover the upstream `hs` Haskell extraction job, MkDocs generation, artifact-branch publication, the independent property-catalog drift check, or nightly conformance testing against the separate `cardano-ledger` repository. Those are separate commands and will need separate bundles or a future explicit aggregate manifest.[5] [6]
 
+## Initial result
+
+The first pinned run passed on 30 October 2026. Its independently verified identifiers, toolchain observations, and exact claim are recorded in [the initial result](formal-ledger-result-2026-10-30.md).
+
 ## Sources
 
 [1]: https://github.com/IntersectMBO/formal-ledger-specifications/blob/7d4956e92bfa7cc472dca79c6eaf496677c24ea5/build-tools/scripts/checkTypeChecked.sh "Formal-ledger completeness check"
