@@ -7,6 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_client_pilot_preserves_native_source_and_failure_cases(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "client-pilot.yml").read_text(encoding="utf-8")
+        for required in ("workflow_dispatch:", "ubuntu-24.04", "--no-install-recommends agda-bin",
+                         "python scripts/client-pilot.py", "imported alias no-import private homonym",
+                         "agda-evidence client verify", "git diff --exit-code", "actions/upload-artifact@v4"):
+            self.assertIn(required, workflow)
+
     def test_algebra_pilot_adds_discovery_without_changing_its_native_gate(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "agda-algebras-pilot.yml").read_text(encoding="utf-8")
         for required in (

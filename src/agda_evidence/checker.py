@@ -17,7 +17,7 @@ from .core import (
     EvidenceError, _copy_snapshot, _digest_identifier, _indexable_source_path,
     _normalised_file_records, _object, _parse_timestamp, _read_json,
     build_resolution, build_snapshot, canonical_json_bytes, derive_resolution_id,
-    derive_source_id, digest_value, load_verified_bundle, sha256_file, utc_now,
+    derive_source_id, digest_value, load_verified_bundle, resolution_identity_projection, sha256_file, utc_now,
 )
 
 OBSERVATION_FORMAT = "agda-evidence/type-observation-v1"
@@ -264,12 +264,13 @@ def _include_roots(includes: Sequence[str]) -> list[str]:
     return roots
 
 
-def _argv(executable: str, includes: list[str], safe: bool) -> list[str]:
+def _argv(executable: str, includes: list[str], safe: bool, anchor: str | None = None) -> list[str]:
     args = [executable, "--interaction-json", "--no-libraries", "--ignore-interfaces"]
     if safe:
         args.append("--safe")
     for value in includes:
-        args.extend(["-i", value])
+        path = value if anchor is None else (anchor if value == "." else f"{anchor}/{value}")
+        args.extend(["-i", path])
     return args
 
 
@@ -281,6 +282,7 @@ def infer_type(
     project_root: Path, file: str, expression: str, *, agda_binary: str = "agda",
     includes: Sequence[str] = (), safe: bool = False, timeout_seconds: int = 60,
     max_output_bytes: int = 4_194_304, bundle: Path | None = None,
+    _expected_agda: dict[str, Any] | None = None, _expected_source_id: str | None = None,
 ) -> dict[str, Any]:
     """Infer in a native Agda module's top-level scope, never in-place."""
     if os.name != "posix":
@@ -300,6 +302,8 @@ def infer_type(
     include_roots = _include_roots(includes)
     root = project_root.resolve()
     snapshot, files = build_snapshot(root)
+    if _expected_source_id is not None and snapshot["sourceId"] != _expected_source_id:
+        raise CheckerEvidenceError("checker composition source pin mismatch before interaction")
     file_records = {record["path"]: record for record in snapshot["files"]}
     if file not in file_records:
         raise EvidenceError("checker file is absent from the source snapshot")
@@ -307,6 +311,8 @@ def infer_type(
         if not (root / value).is_dir():
             raise EvidenceError(f"include root does not exist: {value}")
     resolution = build_resolution(root, agda_binary=agda_binary)
+    if _expected_agda is not None and resolution_identity_projection(resolution)["agda"] != _expected_agda:
+        raise CheckerEvidenceError("checker composition compiler pin mismatch before interaction")
     basis = None
     if bundle is not None:
         try:
@@ -343,7 +349,7 @@ def infer_type(
             compiler_path = Path(executable).resolve()
             if f"sha256:{sha256_file(compiler_path)}" != resolution["agda"].get("binarySha256"):
                 raise CheckerEvidenceError("Agda executable changed after resolution capture")
-            session = AgdaSession(_argv(str(Path(executable).resolve()), include_roots, safe), stage, timeout_seconds, max_output_bytes)
+            session = AgdaSession(_argv(str(Path(executable).resolve()), include_roots, safe, anchor=str(stage)), stage, timeout_seconds, max_output_bytes)
             for phase in ("startup", "load", "infer"):
                 logical_request = None if phase == "startup" else _request(f"$PROJECT_ROOT/{file}", phase, expression)
                 actual_request = None if phase == "startup" else _request(str(stage / file), phase, expression)
@@ -376,7 +382,7 @@ def infer_type(
         "basis": basis,
         "query": {"file": file, "sourceSha256": file_records[file]["sha256"], "expression": expression,
                   "includes": include_roots, "safe": safe, "rewrite": "Simplified"},
-        "execution": {"argv": _argv("$AGDA", include_roots, safe), "mode": "isolated-project-copy",
+        "execution": {"argv": _argv("$AGDA", include_roots, safe, anchor="$PROJECT_ROOT"), "mode": "isolated-project-copy",
                       "timeoutSeconds": timeout_seconds, "maxOutputBytes": max_output_bytes,
                       "startedAt": started_at, "finishedAt": finished_at},
         "transcript": transcript,
@@ -435,7 +441,9 @@ def validate_observation(value: Any) -> dict[str, Any]:
     execution = _object(observation["execution"], "observation execution")
     if set(execution) != {"argv", "mode", "timeoutSeconds", "maxOutputBytes", "startedAt", "finishedAt"}:
         raise CheckerEvidenceError("observation execution has unsupported fields")
-    if execution["argv"] != _argv("$AGDA", includes, query["safe"]) or execution["mode"] != "isolated-project-copy":
+    valid_argv = (_argv("$AGDA", includes, query["safe"], anchor="$PROJECT_ROOT"),
+                  _argv("$AGDA", includes, query["safe"]))
+    if execution["argv"] not in valid_argv or execution["mode"] != "isolated-project-copy":
         raise CheckerEvidenceError("observation argv or staging mode does not match query policy")
     for field, minimum in (("timeoutSeconds", 1), ("maxOutputBytes", 1024)):
         if not isinstance(execution[field], int) or isinstance(execution[field], bool) or execution[field] < minimum:

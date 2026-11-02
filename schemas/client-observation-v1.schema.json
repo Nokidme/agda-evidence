@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agda-evidence one-library client observation v1",
+  "description": "An explicit client expression observation with pinned library source and lexical selection context. It does not establish expression-to-candidate identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "clientObservationId", "clientSnapshot", "library", "composition", "typeObservation"],
+  "properties": {
+    "format": {"const": "agda-evidence/client-observation-v1"},
+    "clientObservationId": {"$ref": "#/$defs/digest"},
+    "clientSnapshot": {"$ref": "type-observation-v1.schema.json#/properties/snapshot"},
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "nativeResolution", "candidate"],
+      "properties": {
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest", "components"],
+          "properties": {
+            "manifest": {"$ref": "evidence-bundle-v1.schema.json"},
+            "components": {
+              "type": "object",
+              "required": ["snapshot.json", "resolution.json", "attestation.json", "diagnostics.json", "index-ref.json"],
+              "propertyNames": {"pattern": "^[^/\\\\]+$", "not": {"enum": [".", "..", "bundle.json"]}},
+              "additionalProperties": {"type": "object"}
+            }
+          }
+        },
+        "nativeResolution": {"$ref": "type-observation-v1.schema.json#/properties/resolution"},
+        "candidate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "line", "qualifiedName", "kind", "sourceSha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "line": {"type": "integer", "minimum": 1},
+            "qualifiedName": {"type": "string", "minLength": 1},
+            "kind": {"enum": ["module", "signature", "data", "record", "postulate", "primitive"]},
+            "sourceSha256": {"$ref": "#/$defs/digest"}
+          }
+        }
+      }
+    },
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "clientIncludes", "libraryIncludes"],
+      "properties": {
+        "policy": {"const": "one-library-source-copy-v1"},
+        "clientIncludes": {"$ref": "#/$defs/includes"},
+        "libraryIncludes": {"$ref": "#/$defs/includes"}
+      }
+    },
+    "typeObservation": {"$ref": "type-observation-v1.schema.json"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "includes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

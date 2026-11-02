@@ -24,6 +24,8 @@ agda-evidence checker verify /tmp/identity.type.json
 
 The first expression displays `Nat → Nat`; the second displays `Nat → Nat → Nat` on locally tested Agda 2.6.3. Pretty-printing may differ across versions. `--agda-bin` selects one executable, not a shell command. `--include src` adds a project-relative include directory; repeat it if needed. The project root is always included. Absolute includes, parent segments, symlinks in captured source, and files absent from the snapshot are rejected.
 
+New native invocations anchor those relative include policies to absolute staged directories, because Agda can resolve relative `-i` arguments from the loaded file's directory rather than the requested project root. Saved argv normalizes the anchors to `$PROJECT_ROOT` and `$PROJECT_ROOT/src`. The verifier also accepts the older relative argv profile under its original recorded semantics; it does not rewrite an old observation or pretend its include roots were anchored. The [one-library client adapter](client.md) requires the new anchored profile.
+
 `--safe` is explicit and optional; it is recorded in the compiler argv. A clean load without `--safe` can still involve postulates or source options that weaken proof claims. Neither mode proves informal mathematical intent or independently checks every declaration returned by lexical discovery.
 
 The output must be a new JSON file outside the source project and outside any referenced basis bundle. The CLI checks this before launching Agda. Defaults are a 60-second total interaction timeout and a 4 MiB combined stdout/stderr byte limit. Metadata/version probing occurs before that session and uses the existing small-command timeouts. The process group is terminated on completion or failure so native launchers do not leave descendants running.
@@ -79,7 +81,7 @@ Successful inference establishes only that the recorded Agda returned the displa
 
 Choose the expression explicitly for the loaded module. A lexical candidate such as `Main.identity` is not automatically a valid self-qualified expression there; `identity` is the working query in the included example. On locally tested Agda 2.6.3, the example's `Main.identity` and private `localIdentity` queries return scope errors. The adapter preserves those results rather than stripping qualification or inventing visibility rules.
 
-The adapter therefore does not reinterpret Agda's textual `WhyInScope` explanations as an authoritative declaration graph. It also does not merge type observations into catalog query hits. Structured declaration provenance and a client-module scope adapter are separate future capabilities.
+The adapter therefore does not reinterpret Agda's textual `WhyInScope` explanations as an authoritative declaration graph. It also does not merge type observations into catalog query hits. The separate [client composition adapter](client.md) checks expressions in an existing client with one explicitly selected source library; structured declaration provenance and a general scope graph remain future capabilities.
 
 Loading may generate normal interface/cache files inside the temporary copy and compiler-managed builtin locations. The original source tree is not used as the working copy, and captured staged regular source inputs are checked for unexpected changes. This is source-copy isolation, not a security sandbox for a hostile compiler, reflection code, source options, or all host filesystem/network effects.
 

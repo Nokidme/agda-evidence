@@ -1,0 +1,51 @@
+name: native client pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out agda-evidence
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install native Agda and agda-evidence
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+          python -m pip install .
+
+      - name: Capture and verify explicit client contexts
+        run: |
+          python scripts/client-pilot.py \
+            --agda-bin /usr/bin/agda \
+            --output "$RUNNER_TEMP/native-client-pilot"
+          agda-evidence verify "$RUNNER_TEMP/native-client-pilot/library.evidence"
+          for label in imported alias no-import private homonym; do
+            agda-evidence client verify "$RUNNER_TEMP/native-client-pilot/$label.client.json"
+          done
+
+      - name: Require an unchanged source checkout
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
+      - name: Upload separate client observations and library evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-client-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/native-client-pilot
+          if-no-files-found: warn
+          retention-days: 30

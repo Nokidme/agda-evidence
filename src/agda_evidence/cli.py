@@ -11,6 +11,7 @@ from typing import Sequence
 from . import __version__
 from .catalog import CatalogValidationError, create_catalog, query_catalog, verify_catalog
 from .checker import CheckerEvidenceError, infer_type, load_observation, write_observation
+from .client import client_summary, infer_client, load_client_observation, write_client_observation
 from .core import (
     DECLARATION_KINDS,
     EvidenceError,
@@ -26,6 +27,18 @@ from .core import (
     write_declaration_index,
     write_resolution_observation,
 )
+
+
+class _Once(argparse.Action):
+    """Reject repeated single-valued client selectors instead of last-value wins."""
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: object, option_string: str | None = None) -> None:
+        marker = f"_explicit_{self.dest}"
+        if getattr(namespace, marker, False):
+            parser.error(f"{option_string} may be supplied only once")
+        setattr(namespace, marker, True)
+        setattr(namespace, self.dest, values)
 
 
 def _capture_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -130,6 +143,24 @@ def build_parser() -> argparse.ArgumentParser:
     checker_infer.add_argument("--bundle", type=Path, help="optional verified enhanced bundle to pin live source/resolution")
     checker_verify = checker_commands.add_parser("verify", help="verify saved observation without running Agda")
     checker_verify.add_argument("observation", type=Path)
+
+    client = subparsers.add_parser("client", help="infer in an unchanged client with one pinned source library")
+    client_commands = client.add_subparsers(dest="client_command", required=True)
+    client_infer = client_commands.add_parser("infer", help="compose explicit client/library source copies and query the client")
+    for flag, value_type in (("--project-root", Path), ("--library-root", Path), ("--library-bundle", Path), ("--output", Path)):
+        client_infer.add_argument(flag, type=value_type, required=True, action=_Once)
+    for flag in ("--file", "--expression", "--candidate-path", "--candidate-qualified-name"):
+        client_infer.add_argument(flag, required=True, action=_Once)
+    client_infer.add_argument("--candidate-line", type=int, required=True, action=_Once)
+    client_infer.add_argument("--candidate-kind", choices=sorted(DECLARATION_KINDS), required=True, action=_Once)
+    client_infer.add_argument("--library-include", action="append", required=True, help="explicit library-relative include root")
+    client_infer.add_argument("--include", action="append", default=[], help="additional client-relative include root")
+    client_infer.add_argument("--agda-bin", default="agda", action=_Once)
+    client_infer.add_argument("--safe", action="store_true")
+    client_infer.add_argument("--timeout-seconds", type=int, default=60, action=_Once)
+    client_infer.add_argument("--max-output-bytes", type=int, default=4_194_304, action=_Once)
+    client_verify = client_commands.add_parser("verify", help="verify client envelope and embedded evidence without Agda")
+    client_verify.add_argument("observation", type=Path)
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -307,6 +338,31 @@ def _checker(arguments: argparse.Namespace) -> int:
     return 0 if observation["result"]["status"] == "inferred" else 1
 
 
+def _client(arguments: argparse.Namespace) -> int:
+    if arguments.client_command == "verify":
+        observation = load_client_observation(arguments.observation)
+        print(json.dumps(client_summary(observation), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    output = arguments.output
+    if output.exists() or output.is_symlink():
+        raise EvidenceError(f"client observation output already exists: {output}")
+    for root in (arguments.project_root, arguments.library_root, arguments.library_bundle):
+        if output.resolve().is_relative_to(root.resolve()):
+            raise EvidenceError("client observation output must be outside client, library and evidence roots")
+    observation = infer_client(
+        arguments.project_root, arguments.file, arguments.expression,
+        library_bundle=arguments.library_bundle, library_root=arguments.library_root,
+        library_includes=arguments.library_include,
+        candidate={"path": arguments.candidate_path, "line": arguments.candidate_line,
+                   "qualifiedName": arguments.candidate_qualified_name, "kind": arguments.candidate_kind},
+        agda_binary=arguments.agda_bin, includes=arguments.include, safe=arguments.safe,
+        timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
+    )
+    write_client_observation(output, observation)
+    print(json.dumps(client_summary(observation), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if observation["typeObservation"]["result"]["status"] == "inferred" else 1
+
+
 def _parse_lane_specification(value: str) -> tuple[str, Path]:
     name, delimiter, raw_path = value.partition("=")
     if not delimiter or not name or not raw_path:
@@ -363,6 +419,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _catalog(arguments)
         if arguments.subcommand == "checker":
             return _checker(arguments)
+        if arguments.subcommand == "client":
+            return _client(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":

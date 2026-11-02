@@ -105,6 +105,19 @@ agda-evidence checker verify /tmp/identity.type.json
 
 An optional `--bundle` pins the current source and visible resolution to earlier verified evidence. This first adapter disables library files, uses explicit project-relative include roots, and requires a clean load. Failed queries save diagnostic observations rather than types. Saved observation verification is local and does not rerun Agda. Inferred display text does not prove a lexical candidate's declaration origin or importability elsewhere. See the [checker guide](docs/checker.md).
 
+## Try a discovered expression in an existing client
+
+`client infer` composes unchanged client and library source copies, pins one selected indexed library bundle against its checkout and native compiler context, and queries an explicit expression in the existing client module. It adds no import and guesses no qualification. The complete selected evidence and nested checker observation are saved in one independently verifiable envelope.
+
+The [client guide](docs/client.md) provides selection/import/query commands. A reusable native pilot demonstrates successful explicit imports and aliases, failed missing-import/private-name queries, and a local-homonym success that must **not** be interpreted as selected-candidate resolution:
+
+```sh
+python scripts/client-pilot.py --agda-bin /usr/bin/agda --output /tmp/native-client-pilot
+agda-evidence client verify /tmp/native-client-pilot/imported.client.json
+```
+
+This supports one direct source-library pair, not dependency solving, Nix activation, an export graph, or a general expression-to-declaration identity claim.
+
 ## Verify a bundle
 
 ```sh

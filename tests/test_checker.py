@@ -218,7 +218,7 @@ class CheckerTests(unittest.TestCase):
         self.assertIsNone(observation["transcript"][0]["request"])
         self.assertEqual(observation["query"]["includes"], [".", "src"])
         self.assertEqual(observation["execution"]["argv"], [
-            "$AGDA", "--interaction-json", "--no-libraries", "--ignore-interfaces", "--safe", "-i", ".", "-i", "src"
+            "$AGDA", "--interaction-json", "--no-libraries", "--ignore-interfaces", "--safe", "-i", "$PROJECT_ROOT", "-i", "$PROJECT_ROOT/src"
         ])
         interaction = [call for call in popen.call_args_list if "--interaction-json" in call.args[0]]
         self.assertEqual(len(interaction), 1)
@@ -234,6 +234,12 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(list(self.project.rglob("*.agdai")), [])
         self.assertEqual(observation["observationId"], checker.observation_id(observation))
+
+    def test_legacy_relative_argv_observation_keeps_original_verification_contract(self) -> None:
+        observation = self.infer(includes=("src",), safe=True)
+        observation["execution"]["argv"] = checker._argv("$AGDA", [".", "src"], True)
+        observation["observationId"] = checker.observation_id(observation)
+        self.assertEqual(checker.validate_observation(observation), observation)
 
     def test_fragmented_json_prompt_and_unicode_request(self) -> None:
         self.make_fake("fragmented")
@@ -464,6 +470,22 @@ class RealAgdaCheckerTests(unittest.TestCase):
                 self.assertEqual(observation["result"], {"status": "inferred", "type": expected}, observation["transcript"])
                 self.assertEqual(checker.validate_observation(observation), observation)
         self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*.agda")})
+        self.assertEqual(list(self.project.rglob("*.agdai")), [])
+
+    def test_nested_client_file_uses_workspace_anchored_sibling_include(self) -> None:
+        (self.project / "client").mkdir()
+        (self.project / "library" / "src").mkdir(parents=True)
+        (self.project / "library" / "src" / "Helper.agda").write_text(
+            "module Helper where\nopen import Agda.Builtin.Nat\nhelper : Nat → Nat\nhelper x = x\n",
+            encoding="utf-8",
+        )
+        nested = self.project / "client" / "Client.agda"
+        nested.write_text("module Client where\nopen import Agda.Builtin.Nat\nimport Helper\n", encoding="utf-8")
+        observation = checker.infer_type(
+            self.project, "client/Client.agda", "Helper.helper", includes=("client", "library/src"), safe=True,
+        )
+        self.assertEqual(observation["result"], {"status": "inferred", "type": "Nat → Nat"})
+        self.assertIn("$PROJECT_ROOT/library/src", observation["execution"]["argv"])
         self.assertEqual(list(self.project.rglob("*.agdai")), [])
 
     def test_real_load_error_goals_and_missing_name(self) -> None:
