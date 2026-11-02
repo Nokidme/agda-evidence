@@ -72,6 +72,8 @@ The original source is not used as the writable working copy, and staged regular
 
 Snapshots are file manifests, not source archives. Hashes establish internal consistency, not producer authenticity or protection against a consistently fabricated transcript. These records support inspection/research provenance, not offline source/toolchain replay or a proof certificate.
 
+The [2 November 2026 native pilot result](pilots/goals-result-2026-11-02.md) records the successful remote run, five independently verified record identifiers, exact source/compiler subjects, and artifact download/verification commands. Run `python scripts/goals-pilot.py --agda-bin /usr/bin/agda --output /tmp/native-goals-pilot` from a checkout to repeat its fixture with a new output directory.
+
 ## References
 
 [1]: https://raw.githubusercontent.com/agda/agda/v2.6.3/src/full/Agda/Interaction/InteractionTop.hs "Agda v2.6.3 combined goal command, load continuation and checked status"
