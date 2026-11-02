@@ -80,6 +80,19 @@ agda-evidence index query /tmp/library.evidence --prefix Data.Nat
 
 The index is deliberately lexical: it finds documented source-text candidates, not typechecked, resolved, exported, or complete declarations. Capture rejects an index that is stale or does not exactly match the captured source scan. See the [declaration-index guide](docs/declaration-index.md).
 
+## Search an explicit set of libraries
+
+A local catalog names indexed evidence bundles and pins each entry's source and partial resolution identities. Queries verify every entry before returning candidates with independent bundle, index, and check provenance:
+
+```sh
+agda-evidence catalog create --output /work/catalog.json \
+  --entry stdlib=/work/stdlib.evidence --entry research=/work/research.evidence
+agda-evidence catalog verify /work/catalog.json
+agda-evidence catalog query /work/catalog.json --prefix Data.Nat
+```
+
+Duplicate candidate names stay separate. A catalog may include different sources or failed checks; it is not a green aggregate, installed Agda environment, compatibility claim, or scope resolver. Paths are local references, not preserved contents. See the [local catalog guide](docs/local-catalog.md).
+
 ## Verify a bundle
 
 ```sh

@@ -425,7 +425,7 @@ def _normalised_declaration_entries(entries: Any) -> list[dict[str, Any]]:
         if not isinstance(qualified_name, str) or not qualified_name or qualified_name.strip() != qualified_name or "\n" in qualified_name:
             raise EvidenceError(f"declaration index entries[{number}].qualifiedName must be a non-empty one-line string")
         kind = record.get("kind")
-        if kind not in DECLARATION_KINDS:
+        if not isinstance(kind, str) or kind not in DECLARATION_KINDS:
             raise EvidenceError(f"declaration index entries[{number}].kind is not a supported lexical candidate kind")
         line = record.get("line")
         if not isinstance(line, int) or isinstance(line, bool) or line < 1:
@@ -1020,9 +1020,24 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _read_json(path: Path) -> Any:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise EvidenceError(f"duplicate JSON key {key!r} in {path}")
+            value[key] = item
+        return value
+
+    def invalid_constant(value: str) -> None:
+        raise EvidenceError(f"non-JSON numeric constant {value!r} in {path}")
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=unique_object,
+            parse_constant=invalid_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise EvidenceError(f"cannot read JSON file {path}: {error}") from error
 
 
@@ -1065,16 +1080,17 @@ def bound_declaration_index(reference: dict[str, Any], snapshot: dict[str, Any])
 def declaration_index_from_bundle(bundle_directory: Path) -> dict[str, Any]:
     """Load a verified source-bound lexical index from an evidence bundle."""
 
-    problems = verify_bundle(bundle_directory)
-    if problems:
-        raise EvidenceError(f"bundle cannot supply a declaration index: {'; '.join(problems)}")
-    root = bundle_directory.resolve()
-    bundle = _object(_read_json(root / "bundle.json"), "bundle.json")
-    components = _object(bundle.get("components"), "bundle.json components")
-    if "index-ref.json" not in components:
+    _, payloads = load_verified_bundle(bundle_directory)
+    return declaration_index_from_payloads(payloads)
+
+
+def declaration_index_from_payloads(payloads: dict[str, Any]) -> dict[str, Any]:
+    """Read a bound index from an already verified in-memory component set."""
+
+    if "index-ref.json" not in payloads:
         raise EvidenceError("bundle does not contain a declaration index")
-    reference = _object(_read_json(root / "index-ref.json"), "index-ref.json")
-    snapshot = _object(_read_json(root / "snapshot.json"), "snapshot.json")
+    reference = _object(payloads["index-ref.json"], "index-ref.json")
+    snapshot = _object(payloads["snapshot.json"], "snapshot.json")
     index = bound_declaration_index(reference, snapshot)
     if index is None:
         raise EvidenceError("bundle contains a legacy opaque index reference, not a source-bound declaration index")
@@ -1301,34 +1317,56 @@ def _verify_enhanced_identities(
 
 
 def verify_bundle(bundle_directory: Path) -> list[str]:
-    root = bundle_directory.resolve()
-    problems: list[str] = []
+    """Verify one captured payload set; do not reread files for semantic checks."""
+
     try:
-        bundle = _read_json(root / "bundle.json")
+        bundle, payloads, problems = _load_bundle_payloads(bundle_directory)
     except EvidenceError as error:
         return [str(error)]
+    return problems + _verify_bundle_payloads(bundle, payloads)
 
-    if bundle.get("format") != BUNDLE_FORMAT:
-        problems.append("bundle.json has an unrecognized format")
+
+def _load_bundle_payloads(
+    bundle_directory: Path, *, regular_files_only: bool = False
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    if regular_files_only and (bundle_directory.is_symlink() or not bundle_directory.is_dir()):
+        raise EvidenceError("bundle directory must be a regular directory, not a symlink")
+    root = bundle_directory.resolve()
+    problems: list[str] = []
+    manifest_path = root / "bundle.json"
+    if regular_files_only and (manifest_path.is_symlink() or not manifest_path.is_file()):
+        raise EvidenceError("bundle.json must be a regular file, not a symlink")
+    bundle = _object(_read_json(manifest_path), "bundle.json")
     components = bundle.get("components")
     if not isinstance(components, dict):
-        return problems + ["bundle.json does not contain a components object"]
+        raise EvidenceError("bundle.json does not contain a components object")
 
     payloads: dict[str, Any] = {}
-    for filename, expected in sorted(components.items()):
-        if not isinstance(filename, str) or "/" in filename or "\\" in filename:
+    for filename in sorted(components):
+        if not filename or filename in {".", "..", "bundle.json"} or "/" in filename or "\\" in filename:
             problems.append(f"unsafe component filename: {filename!r}")
             continue
         component_path = root / filename
+        if regular_files_only and component_path.is_symlink():
+            problems.append(f"symlinked component is not supported: {filename}")
+            continue
         if not component_path.is_file():
             problems.append(f"missing component: {filename}")
             continue
         try:
-            payload = _read_json(component_path)
+            payloads[filename] = _read_json(component_path)
         except EvidenceError as error:
             problems.append(str(error))
-            continue
-        payloads[filename] = payload
+    return bundle, payloads, problems
+
+
+def _verify_bundle_payloads(bundle: dict[str, Any], payloads: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    if bundle.get("format") != BUNDLE_FORMAT:
+        problems.append("bundle.json has an unrecognized format")
+    components = _object(bundle.get("components"), "bundle.json components")
+    for filename, payload in payloads.items():
+        expected = components[filename]
         actual = f"sha256:{digest_value(payload)}"
         if actual != expected:
             problems.append(f"digest mismatch for {filename}: expected {expected}, got {actual}")
@@ -1352,6 +1390,21 @@ def verify_bundle(bundle_directory: Path) -> list[str]:
         except EvidenceError as error:
             problems.append(str(error))
     return problems
+
+
+def load_verified_bundle(bundle_directory: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return verified manifest/components for read-only evidence consumers.
+
+    Reject symlinked manifests/components and return the same objects that were
+    checked. Consumers must not reread provenance from the filesystem afterward.
+    This is an internally consistent read, not an atomic filesystem snapshot.
+    """
+
+    bundle, payloads, problems = _load_bundle_payloads(bundle_directory, regular_files_only=True)
+    problems.extend(_verify_bundle_payloads(bundle, payloads))
+    if problems:
+        raise EvidenceError(f"invalid evidence bundle: {'; '.join(problems)}")
+    return bundle, payloads
 
 
 def _lane_name(value: Any, field: str = "lane name") -> str:

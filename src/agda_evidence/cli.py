@@ -9,6 +9,7 @@ import sys
 from typing import Sequence
 
 from . import __version__
+from .catalog import CatalogValidationError, create_catalog, query_catalog, verify_catalog
 from .core import (
     DECLARATION_KINDS,
     EvidenceError,
@@ -97,6 +98,21 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(DECLARATION_KINDS),
         help="candidate kind to retain; repeat to select several kinds",
     )
+
+    catalog = subparsers.add_parser("catalog", help="pin and search an explicit local set of indexed bundles")
+    catalog_commands = catalog.add_subparsers(dest="catalog_command", required=True)
+    catalog_create = catalog_commands.add_parser("create", help="write a new local config with source/resolution pins")
+    catalog_create.add_argument("--output", type=Path, required=True, help="new local catalog JSON file")
+    catalog_create.add_argument("--entry", action="append", required=True, metavar="NAME=BUNDLE")
+    catalog_verify = catalog_commands.add_parser("verify", help="verify every catalog entry and its identity pins")
+    catalog_verify.add_argument("catalog", type=Path)
+    catalog_query = catalog_commands.add_parser("query", help="query all verified entries with evidence provenance")
+    catalog_query.add_argument("catalog", type=Path)
+    catalog_filters = catalog_query.add_mutually_exclusive_group()
+    catalog_filters.add_argument("--exact", help="exact qualified candidate name")
+    catalog_filters.add_argument("--prefix", help="qualified candidate name prefix")
+    catalog_query.add_argument("--kind", action="append", choices=sorted(DECLARATION_KINDS))
+    catalog_query.add_argument("--library", action="append", help="catalog label to search; repeat to select several")
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -229,6 +245,26 @@ def _verify(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _catalog(arguments: argparse.Namespace) -> int:
+    if arguments.catalog_command == "create":
+        references = []
+        for value in arguments.entry:
+            name, delimiter, path = value.partition("=")
+            if not delimiter or not name or not path:
+                raise EvidenceError("--entry must use NAME=BUNDLE with non-empty values")
+            references.append((name, Path(path)))
+        result = create_catalog(arguments.output, references)
+    elif arguments.catalog_command == "verify":
+        result = verify_catalog(arguments.catalog)
+    else:
+        result = query_catalog(
+            arguments.catalog, exact=arguments.exact, prefix=arguments.prefix,
+            kinds=arguments.kind or (), libraries=arguments.library or (),
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def _parse_lane_specification(value: str) -> tuple[str, Path]:
     name, delimiter, raw_path = value.partition("=")
     if not delimiter or not name or not raw_path:
@@ -281,6 +317,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _index_build(arguments)
         if arguments.subcommand == "index" and arguments.index_command == "query":
             return _index_query(arguments)
+        if arguments.subcommand == "catalog":
+            return _catalog(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":
@@ -288,6 +326,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.subcommand == "verify":
             return _verify(arguments)
         parser.error(f"unknown subcommand: {arguments.subcommand}")
+    except CatalogValidationError as error:
+        print(f"agda-evidence: {error}", file=sys.stderr)
+        return 1
     except EvidenceError as error:
         print(f"agda-evidence: {error}", file=sys.stderr)
         return 2

@@ -58,12 +58,19 @@ jobs:
           rm -rf .agda
           test ! -e .agda
 
+      - name: Build a source-bound declaration index
+        run: |
+          agda-evidence index build \
+            --project-root "$GITHUB_WORKSPACE/agda-algebras" \
+            --output "$RUNNER_TEMP/agda-algebras.index.json"
+
       - name: Capture the upstream Type-check library lane
         run: |
           agda-evidence capture \
             --project-root "$GITHUB_WORKSPACE/agda-algebras" \
             --output "$GITHUB_WORKSPACE/agda-algebras.evidence" \
             --resolution-file "$RUNNER_TEMP/agda-algebras-resolution.json" \
+            --index-reference "$RUNNER_TEMP/agda-algebras.index.json" \
             --scope "agda-algebras Type-check library CI lane at $ALGEBRA_REF" \
             --timeout-seconds 3600 \
             -- bash -euo pipefail -c '
@@ -71,6 +78,24 @@ jobs:
               nix develop --no-write-lock-file --command make check
             '
           agda-evidence verify "$GITHUB_WORKSPACE/agda-algebras.evidence"
+
+      - name: Verify local catalog discovery
+        run: |
+          agda-evidence catalog create --output "$RUNNER_TEMP/algebras.catalog.json" \
+            --entry "algebras=$GITHUB_WORKSPACE/agda-algebras.evidence"
+          agda-evidence catalog verify "$RUNNER_TEMP/algebras.catalog.json"
+          agda-evidence catalog query "$RUNNER_TEMP/algebras.catalog.json" \
+            --kind module > "$RUNNER_TEMP/algebras-modules.json"
+          RESULT="$RUNNER_TEMP/algebras-modules.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path(os.environ["RESULT"]).read_text())
+          if result["checkedEntries"] != ["algebras"] or not result["entries"]:
+              raise SystemExit("expected verified algebra module candidates")
+          print(f"Catalog returned {len(result['entries'])} lexical module candidates.")
+          PY
 
       - name: Require a green recorded gate
         run: |

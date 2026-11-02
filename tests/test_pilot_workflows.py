@@ -7,6 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_algebra_pilot_adds_discovery_without_changing_its_native_gate(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "agda-algebras-pilot.yml").read_text(encoding="utf-8")
+        for required in (
+            "c7617677f0e4233939660aa42e7fafb2f68e95e0",
+            "probe-nix-resolution", "--resolution-file", "agda-evidence index build",
+            '--index-reference "$RUNNER_TEMP/agda-algebras.index.json"',
+            "nix flake check --no-write-lock-file",
+            "nix develop --no-write-lock-file --command make check",
+            "agda-evidence catalog create", "agda-evidence catalog verify",
+            "agda-evidence catalog query", "expected verified algebra module candidates",
+        ):
+            self.assertIn(required, workflow)
+
     def test_standard_library_pilot_binds_and_queries_a_source_index(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "agda-stdlib-pilot.yml").read_text(encoding="utf-8")
         required = (

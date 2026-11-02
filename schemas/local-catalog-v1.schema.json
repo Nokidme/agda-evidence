@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agda-evidence local discovery catalog v1",
+  "description": "A local reference configuration, not an evidence bundle, Agda environment, or portable archive.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "entries"],
+  "properties": {
+    "format": {"const": "agda-evidence/local-catalog-v1"},
+    "entries": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"},
+      "additionalProperties": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle", "expected"],
+      "properties": {
+        "bundle": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z][A-Za-z0-9+.-]*:)(?!//)[^\u0000-\u001f]+$"
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceId", "resolutionId"],
+          "properties": {
+            "sourceId": {"$ref": "#/$defs/digest"},
+            "resolutionId": {"$ref": "#/$defs/digest"}
+          }
+        }
+      }
+    }
+  }
+}

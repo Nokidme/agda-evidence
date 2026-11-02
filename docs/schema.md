@@ -53,3 +53,9 @@ Writers must not overwrite a non-empty output directory. Readers may ignore an u
 Absolute binary and registry paths are represented with opaque path hashes in the resolution component. The reference implementation does not remove sensitive information from source files, command arguments, environment-dependent tool output, or diagnostics. Review bundle contents before publishing.
 
 A re-fetchable dependency declaration is not an archived dependency closure. Claim offline replay only after the toolchain and authorized dependency closure have been preserved and tested.
+
+## Local discovery catalogs
+
+`agda-evidence/local-catalog-v1` is a separate local configuration, not a new bundle component or closed artifact. Each named entry references an indexed enhanced bundle and pins its expected `sourceId` and `resolutionId`. It has no catalog-wide source, environment, success status, or content-derived identity. Existing bundle and aggregate formats and identity projections are unchanged. Complete legacy v1 bundles still support byte-integrity verification but cannot supply a catalog's enhanced provenance.
+
+Catalog readers verify all references before emitting results and retain the actual recorded command/outcome and independent provenance for each hit. Source/environment pins do not pin a specific attestation or establish freshness against a current checkout. See the [local catalog contract](local-catalog.md) and [schema](../schemas/local-catalog-v1.schema.json). JSON readers reject duplicate keys and non-JSON numeric constants rather than accepting ambiguous payloads.

@@ -26,6 +26,10 @@ The manual workflow therefore has two phases:
 
 The adapter normalizes the stage/checkout path in registry identity data and unwraps the generated project launcher to the underlying Nix-store Agda executable. Thus two clean checkouts of identical flake inputs can compare their `resolutionId` without disclosing or depending on their checkout path.
 
+## Discovery metadata
+
+The workflow now builds a source-bound lexical declaration index after removing probe-generated registry files and attaches it through `--index-reference`. After bundle verification it creates a local catalog, verifies its source/resolution pins, and requires a nonempty lexical module query. This does not change the native check command or make a stronger theorem, scope, export, or dependency-compatibility claim. The indexed artifact can also be selected alongside other independently verified library bundles in a [local catalog](../local-catalog.md).
+
 ## Claim and limits
 
 A green pilot attests that the explicit two-command Type-check library sequence exited successfully in a cold isolated copy of the pinned source. It records a **partial** Nix resolution observation; it does not archive the Nix store closure, prove offline replayability, capture private Cachix configuration, or make claims about the separate link, barrel, span-class, docstring, landing-stat, or site/offline CI lanes.
