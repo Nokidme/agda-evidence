@@ -12,6 +12,7 @@ from . import __version__
 from .catalog import CatalogValidationError, create_catalog, query_catalog, verify_catalog
 from .checker import CheckerEvidenceError, infer_type, load_observation, write_observation
 from .client import client_summary, infer_client, load_client_observation, write_client_observation
+from .goals import load_goal_observation, observe_goals, write_goal_observation
 from .core import (
     DECLARATION_KINDS,
     EvidenceError,
@@ -161,6 +162,24 @@ def build_parser() -> argparse.ArgumentParser:
     client_infer.add_argument("--max-output-bytes", type=int, default=4_194_304, action=_Once)
     client_verify = client_commands.add_parser("verify", help="verify client envelope and embedded evidence without Agda")
     client_verify.add_argument("observation", type=Path)
+
+    goals = subparsers.add_parser("goals", help="record read-only unfinished goals and selected local contexts")
+    goal_commands = goals.add_subparsers(dest="goals_command", required=True)
+    goal_list = goal_commands.add_parser("list", help="load a source copy and record interaction points without querying them")
+    goal_list.add_argument("--file", required=True, action=_Once)
+    goal_list.add_argument("--include", action="append", default=[])
+    goal_list.add_argument("--safe", action="store_true")
+    goal_inspect = goal_commands.add_parser("inspect", help="query one explicit goal under a prior listing's source/policy pins")
+    goal_inspect.add_argument("--listing", type=Path, required=True, action=_Once)
+    goal_inspect.add_argument("--goal-id", type=int, required=True, action=_Once)
+    for command in (goal_list, goal_inspect):
+        command.add_argument("--project-root", type=Path, required=True, action=_Once)
+        command.add_argument("--output", type=Path, required=True, action=_Once)
+        command.add_argument("--agda-bin", default="agda", action=_Once)
+        command.add_argument("--timeout-seconds", type=int, default=60, action=_Once)
+        command.add_argument("--max-output-bytes", type=int, default=4_194_304, action=_Once)
+    goal_verify = goal_commands.add_parser("verify", help="verify a saved goal observation without Agda")
+    goal_verify.add_argument("observation", type=Path)
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -363,6 +382,31 @@ def _client(arguments: argparse.Namespace) -> int:
     return 0 if observation["typeObservation"]["result"]["status"] == "inferred" else 1
 
 
+def _goals(arguments: argparse.Namespace) -> int:
+    if arguments.goals_command == "verify":
+        value = load_goal_observation(arguments.observation)
+    else:
+        output = arguments.output
+        if output.exists() or output.is_symlink():
+            raise EvidenceError(f"goal observation output already exists: {output}")
+        if output.resolve().is_relative_to(arguments.project_root.resolve()):
+            raise EvidenceError("goal observation output must be outside the project root")
+        listing = load_goal_observation(arguments.listing) if arguments.goals_command == "inspect" else None
+        value = observe_goals(
+            arguments.project_root, listing["query"]["file"] if listing else arguments.file,
+            agda_binary=arguments.agda_bin,
+            includes=listing["query"]["includes"] if listing else arguments.include,
+            safe=listing["query"]["safe"] if listing else arguments.safe,
+            listing=listing, goal_id=arguments.goal_id if listing else None,
+            timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
+        )
+        write_goal_observation(output, value)
+    print(json.dumps({"observationId": value["observationId"], "sourceId": value["snapshot"]["sourceId"],
+                      "resolutionId": value["resolution"]["resolutionId"], "result": value["result"]},
+                     ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if arguments.goals_command == "verify" or value["result"]["status"] in {"listed", "inspected"} else 1
+
+
 def _parse_lane_specification(value: str) -> tuple[str, Path]:
     name, delimiter, raw_path = value.partition("=")
     if not delimiter or not name or not raw_path:
@@ -421,6 +465,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _checker(arguments)
         if arguments.subcommand == "client":
             return _client(arguments)
+        if arguments.subcommand == "goals":
+            return _goals(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":

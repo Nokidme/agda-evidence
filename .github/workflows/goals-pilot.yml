@@ -1,0 +1,52 @@
+name: native goals pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  goals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out agda-evidence
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install native Agda and agda-evidence
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+          python -m pip install -e .
+
+      - name: Observe unfinished goals without source edits
+        run: |
+          python scripts/goals-pilot.py --agda-bin /usr/bin/agda \
+            --output "$RUNNER_TEMP/native-goals-pilot"
+          for observation in "$RUNNER_TEMP/native-goals-pilot"/listing.json \
+              "$RUNNER_TEMP/native-goals-pilot"/empty.json \
+              "$RUNNER_TEMP/native-goals-pilot"/goal-*.json; do
+            agda-evidence goals verify "$observation"
+          done
+
+      - name: Require an unchanged source checkout
+        run: |
+          git status --short
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
+      - name: Upload goal observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-goals-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/native-goals-pilot
+          if-no-files-found: warn
+          retention-days: 30

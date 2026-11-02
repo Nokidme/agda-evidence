@@ -118,6 +118,20 @@ agda-evidence client verify /tmp/native-client-pilot/imported.client.json
 
 This supports one direct source-library pair, not dependency solving, Nix activation, an export graph, or a general expression-to-declaration identity claim.
 
+## Inspect unfinished proof goals
+
+List unfinished goals, then inspect one explicit ID against that saved listing's source, compiler and policy pins:
+
+```sh
+agda-evidence goals list --project-root examples/goal-query --file Main.agda \
+  --safe --output /tmp/goals.list.json
+agda-evidence goals inspect --project-root examples/goal-query \
+  --listing /tmp/goals.list.json --goal-id 1 --output /tmp/goal-context.json
+agda-evidence goals verify /tmp/goal-context.json
+```
+
+The result retains displayed type, structured local bindings, and goal-related constraint/boundary text. It never fills holes or declares the proof complete. Unfinished loads may have `checked: false`; a separate conservative policy blocks unrelated warnings/errors without weakening clean-only type inference. See the [goal inspection guide](docs/goals.md).
+
 ## Verify a bundle
 
 ```sh

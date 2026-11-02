@@ -7,6 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_goals_pilot_keeps_inspection_read_only_and_retains_records(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "goals-pilot.yml").read_text(encoding="utf-8")
+        for required in ("workflow_dispatch:", "ubuntu-24.04", "python -m pip install -e .",
+                         "python scripts/goals-pilot.py", "agda-evidence goals verify",
+                         "git diff --exit-code", "native-goals-pilot-${{ github.sha }}"):
+            self.assertIn(required, workflow)
+
     def test_client_pilot_preserves_native_source_and_failure_cases(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "client-pilot.yml").read_text(encoding="utf-8")
         for required in ("workflow_dispatch:", "ubuntu-24.04", "--no-install-recommends agda-bin",
