@@ -34,6 +34,11 @@ class PilotWorkflowTests(unittest.TestCase):
             "agda-evidence index query \"$GITHUB_WORKSPACE/agda-stdlib.evidence\"",
             "--prefix Data.Nat --kind module",
             "expected at least one Data.Nat lexical module candidate",
+            "agda-evidence checker infer",
+            "--file src/Data/Nat/Base.agda --include src --expression '_+_' --safe",
+            '--bundle "$GITHUB_WORKSPACE/agda-stdlib.evidence"',
+            'agda-evidence checker verify "$RUNNER_TEMP/stdlib-addition.type.json"',
+            "agda-stdlib-type-observation-${{ inputs.stdlib_ref }}",
         )
         for value in required:
             self.assertIn(value, workflow)

@@ -93,6 +93,18 @@ agda-evidence catalog query /work/catalog.json --prefix Data.Nat
 
 Duplicate candidate names stay separate. A catalog may include different sources or failed checks; it is not a green aggregate, installed Agda environment, compatibility claim, or scope resolver. Paths are local references, not preserved contents. See the [local catalog guide](docs/local-catalog.md).
 
+## Ask Agda for an expression's type
+
+The native POSIX checker adapter loads an isolated snapshot copy and infers an explicit expression in that module's top-level scope. It does not insert holes or edit the original source:
+
+```sh
+agda-evidence checker infer --project-root examples/type-query \
+  --file Main.agda --expression identity --safe --output /tmp/identity.type.json
+agda-evidence checker verify /tmp/identity.type.json
+```
+
+An optional `--bundle` pins the current source and visible resolution to earlier verified evidence. This first adapter disables library files, uses explicit project-relative include roots, and requires a clean load. Failed queries save diagnostic observations rather than types. Saved observation verification is local and does not rerun Agda. Inferred display text does not prove a lexical candidate's declaration origin or importability elsewhere. See the [checker guide](docs/checker.md).
+
 ## Verify a bundle
 
 ```sh

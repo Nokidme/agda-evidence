@@ -112,6 +112,26 @@ jobs:
           print(f"Verified source-bound index {result['indexId']} returned {len(result['entries'])} Data.Nat modules.")
           PY
 
+      - name: Record a source-pinned checker type observation
+        run: |
+          agda-evidence checker infer \
+            --project-root "$GITHUB_WORKSPACE/agda-stdlib" \
+            --file src/Data/Nat/Base.agda --include src --expression '_+_' --safe \
+            --bundle "$GITHUB_WORKSPACE/agda-stdlib.evidence" \
+            --output "$RUNNER_TEMP/stdlib-addition.type.json" \
+            --timeout-seconds 300
+          agda-evidence checker verify "$RUNNER_TEMP/stdlib-addition.type.json"
+          RESULT="$RUNNER_TEMP/stdlib-addition.type.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          observation = json.loads(Path(os.environ["RESULT"]).read_text())
+          if observation["result"] != {"status": "inferred", "type": "ℕ → ℕ → ℕ"}:
+              raise SystemExit(f"unexpected standard-library addition type: {observation['result']}")
+          print(f"Verified checker observation {observation['observationId']}: {observation['result']['type']}")
+          PY
+
       - name: Require a green recorded gate
         run: |
           python - <<'PY'
@@ -131,5 +151,14 @@ jobs:
         with:
           name: agda-stdlib-evidence-${{ inputs.stdlib_ref }}
           path: agda-stdlib.evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload separate checker observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agda-stdlib-type-observation-${{ inputs.stdlib_ref }}
+          path: ${{ runner.temp }}/stdlib-addition.type.json
           if-no-files-found: warn
           retention-days: 30

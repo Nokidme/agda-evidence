@@ -10,6 +10,7 @@ from typing import Sequence
 
 from . import __version__
 from .catalog import CatalogValidationError, create_catalog, query_catalog, verify_catalog
+from .checker import CheckerEvidenceError, infer_type, load_observation, write_observation
 from .core import (
     DECLARATION_KINDS,
     EvidenceError,
@@ -113,6 +114,22 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_filters.add_argument("--prefix", help="qualified candidate name prefix")
     catalog_query.add_argument("--kind", action="append", choices=sorted(DECLARATION_KINDS))
     catalog_query.add_argument("--library", action="append", help="catalog label to search; repeat to select several")
+
+    checker = subparsers.add_parser("checker", help="record or verify isolated native-Agda expression types")
+    checker_commands = checker.add_subparsers(dest="checker_command", required=True)
+    checker_infer = checker_commands.add_parser("infer", help="load a snapshot-staged module and infer an explicit expression")
+    checker_infer.add_argument("--project-root", type=Path, required=True)
+    checker_infer.add_argument("--file", required=True, help="snapshot-relative .agda or .lagda.md source path")
+    checker_infer.add_argument("--expression", required=True, help="expression interpreted in the loaded module's top-level scope")
+    checker_infer.add_argument("--output", type=Path, required=True, help="new observation JSON outside project/evidence")
+    checker_infer.add_argument("--agda-bin", default="agda", help="native Agda executable, not a shell command")
+    checker_infer.add_argument("--include", action="append", default=[], help="explicit project-relative include directory")
+    checker_infer.add_argument("--safe", action="store_true", help="add Agda --safe to the recorded command")
+    checker_infer.add_argument("--timeout-seconds", type=int, default=60)
+    checker_infer.add_argument("--max-output-bytes", type=int, default=4_194_304)
+    checker_infer.add_argument("--bundle", type=Path, help="optional verified enhanced bundle to pin live source/resolution")
+    checker_verify = checker_commands.add_parser("verify", help="verify saved observation without running Agda")
+    checker_verify.add_argument("observation", type=Path)
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -265,6 +282,31 @@ def _catalog(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _checker(arguments: argparse.Namespace) -> int:
+    if arguments.checker_command == "verify":
+        observation = load_observation(arguments.observation)
+        print(json.dumps({"observationId": observation["observationId"], "result": observation["result"]}, ensure_ascii=False, indent=2))
+        return 0
+    output = arguments.output
+    if output.exists() or output.is_symlink():
+        raise EvidenceError(f"type observation output already exists: {output}")
+    if output.resolve().is_relative_to(arguments.project_root.resolve()):
+        raise EvidenceError("type observation output must be outside the project root")
+    if arguments.bundle and output.resolve().is_relative_to(arguments.bundle.resolve()):
+        raise EvidenceError("type observation output must be outside its basis bundle")
+    observation = infer_type(
+        arguments.project_root, arguments.file, arguments.expression,
+        agda_binary=arguments.agda_bin, includes=arguments.include, safe=arguments.safe,
+        timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
+        bundle=arguments.bundle,
+    )
+    write_observation(output, observation)
+    print(json.dumps({"observationId": observation["observationId"], "sourceId": observation["snapshot"]["sourceId"],
+                      "resolutionId": observation["resolution"]["resolutionId"], "result": observation["result"]},
+                     ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if observation["result"]["status"] == "inferred" else 1
+
+
 def _parse_lane_specification(value: str) -> tuple[str, Path]:
     name, delimiter, raw_path = value.partition("=")
     if not delimiter or not name or not raw_path:
@@ -319,6 +361,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _index_query(arguments)
         if arguments.subcommand == "catalog":
             return _catalog(arguments)
+        if arguments.subcommand == "checker":
+            return _checker(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":
@@ -326,7 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.subcommand == "verify":
             return _verify(arguments)
         parser.error(f"unknown subcommand: {arguments.subcommand}")
-    except CatalogValidationError as error:
+    except (CatalogValidationError, CheckerEvidenceError) as error:
         print(f"agda-evidence: {error}", file=sys.stderr)
         return 1
     except EvidenceError as error:

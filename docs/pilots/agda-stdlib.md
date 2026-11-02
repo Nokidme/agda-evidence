@@ -24,6 +24,8 @@ The repository provides a manual-only GitHub Actions workflow, **agda-stdlib pil
 
 The composite `sh -eu -c` command is intentional in v0.1. The reference CLI attests one explicit process invocation; `-e` ensures that a failure in the generator or either Agda typecheck makes that recorded composite gate fail. A later structured multi-step execution format can retain individual step records without weakening this v0.1 claim.
 
+The workflow also records a separate native-Agda type observation for `_+_` in `src/Data/Nat/Base.agda`, with `--include src --safe`. It pins live source/resolution against the just-captured enhanced bundle, loads another isolated source copy with library files and cached interfaces disabled, requires the displayed type `ℕ → ℕ → ℕ`, and verifies the observation offline. The observation is uploaded as a separate artifact rather than inserted into the project-check bundle or lexical index. This does not change the composite upstream gate or establish canonical declaration origin or scope in another module.
+
 ## Acceptance criteria
 
 A successful run must have all of the following:
@@ -33,6 +35,7 @@ A successful run must have all of the following:
 - a `resolutionId` that records the Agda 2.8.0 binary observation and visible partial resolution data;
 - successful local verification of the uploaded bundle before upload.
 - a source-bound index query returning at least one lexical `Data.Nat` module candidate from the verified bundle.
+- a separately verified, source/resolution-pinned checker observation returning `ℕ → ℕ → ℕ` for the explicit addition expression.
 
 A failed run is still useful pilot evidence. Its bundle records the same source/resolution observations, full bounded process output, and a red outcome. It must not be described as a successful typecheck.
 

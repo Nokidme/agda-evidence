@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agda-evidence native Agda type observation v1",
+  "description": "A time-specific internally consistent expression-type observation, not a declaration-origin or proof-validity certificate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "observationId", "snapshot", "resolution", "basis", "query", "execution", "transcript", "transport", "result"],
+  "properties": {
+    "format": {"const": "agda-evidence/type-observation-v1"},
+    "observationId": {"$ref": "#/$defs/digest"},
+    "snapshot": {
+      "type": "object",
+      "required": ["format", "capturedAt", "treeAlgorithm", "files", "sourceId", "sourceDigest"],
+      "properties": {
+        "format": {"const": "agda-evidence/snapshot-v1"},
+        "capturedAt": {"type": "string", "format": "date-time"},
+        "treeAlgorithm": {"const": "sha256"},
+        "sourceId": {"$ref": "#/$defs/digest"},
+        "sourceDigest": {"$ref": "#/$defs/digest"},
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256", "size"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"$ref": "#/$defs/digest"},
+              "size": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["format", "capturedAt", "resolutionStatus", "resolutionId", "agda", "projectLibraryFiles", "registry"],
+      "properties": {
+        "format": {"const": "agda-evidence/resolution-v1"},
+        "capturedAt": {"type": "string", "format": "date-time"},
+        "resolutionStatus": {"const": "partial"},
+        "resolutionId": {"$ref": "#/$defs/digest"},
+        "agda": {"type": "object"},
+        "projectLibraryFiles": {"type": "array"},
+        "registry": {"type": "object"}
+      }
+    },
+    "basis": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bundleId", "sourceId", "resolutionId"],
+          "properties": {
+            "bundleId": {"$ref": "#/$defs/digest"},
+            "sourceId": {"$ref": "#/$defs/digest"},
+            "resolutionId": {"$ref": "#/$defs/digest"}
+          }
+        }
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sourceSha256", "expression", "includes", "safe", "rewrite"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "sourceSha256": {"$ref": "#/$defs/digest"},
+        "expression": {"type": "string", "minLength": 1},
+        "includes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "safe": {"type": "boolean"},
+        "rewrite": {"const": "Simplified"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "mode", "timeoutSeconds", "maxOutputBytes", "startedAt", "finishedAt"],
+      "properties": {
+        "argv": {"type": "array", "items": {"type": "string"}},
+        "mode": {"const": "isolated-project-copy"},
+        "timeoutSeconds": {"type": "integer", "minimum": 1},
+        "maxOutputBytes": {"type": "integer", "minimum": 1024},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "finishedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "transcript": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phase", "request", "responses", "complete"],
+        "properties": {
+          "phase": {"enum": ["startup", "load", "infer"]},
+          "request": {"type": ["string", "null"]},
+          "complete": {"type": "boolean"},
+          "responses": {
+            "type": "array",
+            "items": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}}
+          }
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "message", "stderr", "stdoutBytes"],
+      "properties": {
+        "status": {"enum": ["completed", "timed-out", "output-limit", "protocol-error", "execution-error"]},
+        "message": {"type": ["string", "null"]},
+        "stderr": {"type": "string"},
+        "stdoutBytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "type"],
+          "properties": {"status": {"const": "inferred"}, "type": {"type": "string", "minLength": 1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "type"],
+          "properties": {
+            "status": {"enum": ["load-error", "load-incomplete", "query-error", "timed-out", "output-limit", "protocol-error", "execution-error"]},
+            "type": {"type": "null"}
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

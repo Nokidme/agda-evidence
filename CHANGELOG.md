@@ -16,5 +16,6 @@
 - Adds source-bound lexical declaration-index build and evidence-query commands, including stale-index rejection at capture time.
 - Adds explicit local discovery catalogs with source/resolution pins, all-or-nothing validation, and per-result check/index provenance across independent libraries.
 - Reuses verified in-memory payloads for discovery, rejects ambiguous JSON keys, and handles malformed declaration kinds as validation errors.
+- Adds isolated native-Agda top-level type observations with prompt-aware bounded sessions, clean-load gating, optional source/resolution pins, and offline response/result verification.
 
 This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.
