@@ -40,6 +40,8 @@ The workflow never runs `make check` from an already-entered Nix shell in the or
 
 The first pinned run passed on 30 October 2026. Its independently verified identifiers and exact scope are recorded in [the initial result](agda-algebras-result-2026-10-30.md).
 
+The indexed follow-up passed on 2 November 2026 and was independently queried alongside the standard-library evidence. See the [two-library catalog result](local-catalog-result-2026-11-02.md) for identities, candidate counts, and pin-rejection checks.
+
 ## Sources
 
 - [agda-algebras README](https://github.com/ualib/agda-algebras/blob/c7617677f0e4233939660aa42e7fafb2f68e95e0/README.md)

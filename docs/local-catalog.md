@@ -79,3 +79,7 @@ A new capture with the same source and resolution may satisfy both pins even if 
 A failed, timed-out, or execution-error check remains searchable if its bundle and source index verify. Discovery must not promote such work to successful checking. Missing indexes, legacy opaque references, and legacy/partial identity profiles are not supported in catalogs; existing byte-integrity verification of complete legacy bundles is unchanged.
 
 All [lexical index limitations](declaration-index.md#limits-and-trust-boundary) still apply. Candidates are not necessarily exported, in scope, typechecked individually, or complete. Internal digest consistency is not producer authentication. Search verifies evidence but never executes the command recorded in it.
+
+## Real-library validation
+
+The [2 November 2026 catalog pilot](pilots/local-catalog-result-2026-11-02.md) queried independently verified standard-library and algebra artifacts, preserved their distinct provenance, and rejected both source and resolution pin mismatches even for filtered-out entries.
