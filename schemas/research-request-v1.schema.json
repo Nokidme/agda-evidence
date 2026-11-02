@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Host-owned research API request v1 — not an evidence format",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "op", "revision", "args"],
+  "properties": {
+    "requestId": {"$ref": "#/$defs/text"},
+    "op": {"enum": ["workspace.status", "goals.list", "goals.inspect", "library.search", "candidate.check", "record.get"]},
+    "revision": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
+    "args": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"op": {"const": "workspace.status"}}}, "then": {"properties": {"args": {"type": "object", "maxProperties": 0}}}},
+    {"if": {"properties": {"op": {"const": "record.get"}}}, "then": {"properties": {"args": {"type": "object", "additionalProperties": false, "required": ["recordId"], "properties": {"recordId": {"$ref": "#/$defs/text"}}}}}},
+    {"if": {"properties": {"op": {"enum": ["goals.list", "goals.inspect", "library.search", "candidate.check"]}}}, "then": {"properties": {"revision": {"type": "string"}}}},
+    {"if": {"properties": {"op": {"const": "goals.list"}}}, "then": {"properties": {"args": {"type": "object", "additionalProperties": false, "required": ["documentId"], "properties": {"documentId": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"}}}}}},
+    {"if": {"properties": {"op": {"const": "goals.inspect"}}}, "then": {"properties": {"args": {"type": "object", "additionalProperties": false, "required": ["listingId", "goalId"], "properties": {"listingId": {"$ref": "#/$defs/text"}, "goalId": {"$ref": "#/$defs/goalId"}}}}}},
+    {"if": {"properties": {"op": {"const": "candidate.check"}}}, "then": {"properties": {"args": {"type": "object", "additionalProperties": false, "required": ["listingId", "goalId", "expression"], "properties": {"listingId": {"$ref": "#/$defs/text"}, "goalId": {"$ref": "#/$defs/goalId"}, "expression": {"type": "string", "minLength": 1, "maxLength": 65536, "description": "Runtime also rejects blank/invalid-Unicode input and enforces 65536 UTF-8 bytes."}}}}}},
+    {"if": {"properties": {"op": {"const": "library.search"}}}, "then": {"properties": {"args": {
+      "type": "object", "additionalProperties": false, "required": ["listingId", "goalId"],
+      "properties": {
+        "listingId": {"$ref": "#/$defs/text"}, "goalId": {"$ref": "#/$defs/goalId"},
+        "exact": {"type": "string", "minLength": 1, "maxLength": 256},
+        "prefix": {"type": "string", "minLength": 1, "maxLength": 256},
+        "scope": {"enum": ["project", "catalog", "all"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+        "kinds": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"enum": ["module", "signature", "data", "record", "postulate", "primitive"]}},
+        "libraries": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}}
+      },
+      "oneOf": [{"required": ["exact"], "not": {"required": ["prefix"]}}, {"required": ["prefix"], "not": {"required": ["exact"]}}]
+    }}}}
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\x00-\\x1f]+$"},
+    "goalId": {"type": "integer", "minimum": 0, "maximum": 2147483647}
+  }
+}

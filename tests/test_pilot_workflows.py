@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_research_api_pilot_connects_native_records_without_changing_originals(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "research-pilot.yml").read_text(encoding="utf-8")
+        for required in ("workflow_dispatch:", "ubuntu-24.04", "python -m pip install -e .",
+                         "python scripts/research-pilot.py", "agda-evidence goals verify-check",
+                         "agda-evidence goals verify", "git diff --exit-code",
+                         "native-research-pilot-${{ github.sha }}"):
+            self.assertIn(required, workflow)
+
     def test_candidate_pilot_keeps_trials_non_filling_and_records_failures(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "candidates-pilot.yml").read_text(encoding="utf-8")
         for required in ("workflow_dispatch:", "ubuntu-24.04", "python -m pip install -e .",

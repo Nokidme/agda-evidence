@@ -1,0 +1,48 @@
+name: native research API pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out agda-evidence
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install native Agda and agda-evidence
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+          python -m pip install -e .
+      - name: Connect discovery, selected goals, trials and historical evidence
+        run: |
+          python scripts/research-pilot.py --agda-bin /usr/bin/agda \
+            --output "$RUNNER_TEMP/native-research-pilot"
+          agda-evidence goals verify "$RUNNER_TEMP/native-research-pilot/listing.json"
+          agda-evidence goals verify "$RUNNER_TEMP/native-research-pilot/context.json"
+          agda-evidence verify "$RUNNER_TEMP/native-research-pilot/library.evidence"
+          for record in "$RUNNER_TEMP/native-research-pilot"/*.candidate.json; do
+            agda-evidence goals verify-check "$record"
+          done
+      - name: Require unchanged original source checkout
+        run: |
+          git status --short
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Upload API exchanges and exact native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-research-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/native-research-pilot
+          if-no-files-found: warn
+          retention-days: 30

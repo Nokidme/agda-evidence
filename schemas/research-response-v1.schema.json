@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Host-owned research API response v1 — not an evidence certificate",
+  "type": "object", "additionalProperties": false,
+  "required": ["apiVersion", "requestId", "op", "revision", "currentRevision", "workspace", "status", "recordId", "result", "error"],
+  "properties": {
+    "apiVersion": {"const": 1},
+    "requestId": {"type": ["string", "null"], "maxLength": 128},
+    "op": {"type": ["string", "null"], "maxLength": 128},
+    "revision": {"type": ["string", "null"], "maxLength": 128},
+    "currentRevision": {"type": "string", "minLength": 1},
+    "workspace": {"oneOf": [
+      {"type": "null"},
+      {"type": "object", "additionalProperties": false, "required": ["sourceId", "resolutionId"],
+       "properties": {"sourceId": {"$ref": "#/$defs/digest"}, "resolutionId": {"$ref": "#/$defs/digest"}}}
+    ]},
+    "status": {"enum": ["ok", "error", "stale"], "description": "API ok does not mean native elaboration or proof success. Inspect result.outcome and record freshness."},
+    "recordId": {"type": ["string", "null"]},
+    "result": {"type": ["object", "null"]},
+    "error": {"oneOf": [
+      {"type": "null"},
+      {"type": "object", "additionalProperties": false, "required": ["code", "message"],
+       "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string", "minLength": 1}}}
+    ]}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "ok"}}}, "then": {"properties": {"error": {"type": "null"}}}, "else": {"properties": {"error": {"type": "object"}}}}
+  ],
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

@@ -143,6 +143,12 @@ agda-evidence goals verify-check /tmp/candidate-n.json
 
 Agda checks against the selected goal's contextual expected type, then the adapter verifies that the restored goal summary is unchanged. The positive status is **`elaborated`**, not proof completion or candidate-local obligation freedom: Agda discards speculative checking state before those diagnostics are collected. No expression is inserted and every trial gets a fresh isolated session. See the [candidate guide](docs/candidates.md), including a native unused-meta counterexample to stronger claims.
 
+## Connect an existing research editor
+
+The optional Python `ResearchWorkspace` facade joins host-configured document IDs, goal selection, project/catalog lexical discovery, explicit candidate trials and complete evidence retrieval. Requests carry an editor revision; dirty buffers, source/compiler changes and late results are not promoted as current. A bounded session store retains current or historical exact artifacts without allowing client-supplied host paths or compiler commands.
+
+See the [research API guide](docs/research-api.md) and `scripts/research-pilot.py`. This is a library integration contract, not a replacement editor or a claim that a live AgdaLab deployment has already been modified. The host must provide authorization, revision materialization and execution isolation.
+
 ## Verify a bundle
 
 ```sh
