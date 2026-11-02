@@ -11,6 +11,7 @@ class PilotWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "client-pilot.yml").read_text(encoding="utf-8")
         for required in ("workflow_dispatch:", "ubuntu-24.04", "--no-install-recommends agda-bin",
                          "python scripts/client-pilot.py", "imported alias no-import private homonym",
+                         "python -m pip install -e .", "git status --short",
                          "agda-evidence client verify", "git diff --exit-code", "actions/upload-artifact@v4"):
             self.assertIn(required, workflow)
 

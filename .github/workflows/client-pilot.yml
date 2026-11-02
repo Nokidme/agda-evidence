@@ -24,7 +24,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends agda-bin
           /usr/bin/agda --version
-          python -m pip install .
+          python -m pip install -e .
 
       - name: Capture and verify explicit client contexts
         run: |
@@ -38,6 +38,7 @@ jobs:
 
       - name: Require an unchanged source checkout
         run: |
+          git status --short
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
 
