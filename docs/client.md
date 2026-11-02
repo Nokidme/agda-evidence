@@ -73,6 +73,8 @@ python scripts/client-pilot.py --agda-bin /usr/bin/agda \
 
 The script creates indexed library evidence and independently saves/verifies five cases: explicit import, caller-authored alias, missing import, private-name query, and local homonym. Imported/aliased/homonym expressions infer; missing-import and private-name queries fail. Crucially, the homonym's success does not become a selected-library resolution claim. Outputs remain separate envelopes rather than a green aggregate of successful and failed queries.
 
+The [2 November 2026 native-client result](pilots/client-result-2026-11-02.md) records the completed remote run, all five independently verified envelope identifiers, source/compiler subjects, and artifact verification commands.
+
 ## Non-claims and next boundaries
 
 This is evidence of one expression's behavior in one clean client load with explicit source availability. It is not a full scope resolver, declaration-origin graph, proof search agent, exporter analysis, dependency solver, Nix adapter, or multi-library workspace manager. Imported library options, postulates when `--safe` is absent, module parameters and displayed metavariables retain the ordinary checker caveats.
