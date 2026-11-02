@@ -137,6 +137,24 @@ class ResearchTests(unittest.TestCase):
         return {p.relative_to(self.project).as_posix(): p.read_bytes()
                 for p in self.project.rglob("*") if p.is_file()}
 
+    def test_reads_honor_supplied_revision_and_null_reads_remain_historical(self):
+        listing = self.listed()
+        self.workspace.notify_buffers(dirty=False)
+        for response in (self.call("workspace.status", revision=self.rev),
+                         self.get(listing["recordId"], revision=self.rev)):
+            self.assertEqual(response["status"], "stale", response)
+            self.assertEqual(response["error"]["code"], "workspace-changed")
+            self.assertIsNone(response["result"])
+        current = self.status()["currentRevision"]
+        self.assertNotEqual(current, self.rev)
+        self.assertEqual(self.get(listing["recordId"], revision=current)["result"]["freshness"], "stale")
+        self.assertEqual(self.get(listing["recordId"], revision=None)["result"]["freshness"], "stale")
+        with patch.object(research, "build_snapshot", side_effect=OSError("unavailable")):
+            self.error(self.get(listing["recordId"], revision=current), "freshness-unavailable")
+            historical = self.get(listing["recordId"], revision=None)
+            self.assertEqual(historical["status"], "ok", historical)
+            self.assertEqual(historical["result"]["freshness"], "unknown")
+
     def test_public_roundtrip_envelopes_full_artifacts_and_host_policy(self):
         before = self.tree()
         workspace = self.make_workspace(includes=(".",), safe=True, timeout_seconds=7,

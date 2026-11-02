@@ -256,7 +256,7 @@ class ResearchWorkspace:
             try:
                 subjects, snapshot, resolution = self._observe()
             except RequestError:
-                if op != "record.get":
+                if op != "record.get" or request["revision"] is not None:
                     raise
                 return self._response(request, "ok", record_id=args["recordId"], result={"kind": record["kind"],
                     "documentId": record["documentId"], "recordRevision": record["revision"], "freshness": "unknown",
@@ -264,6 +264,8 @@ class ResearchWorkspace:
             with self._state:
                 self._sync(subjects)
                 revision = self._revision()
+                if request["revision"] is not None and request["revision"] != revision:
+                    return self._response(request, "stale", code="workspace-changed", message="Refresh the workspace revision before retrying this operation")
                 if op == "workspace.status":
                     return self._response(request, "ok", result={"documentIds": sorted(self._documents), "buffersDirty": self._dirty,
                         "compilerAvailable": resolution["agda"].get("available") is True,

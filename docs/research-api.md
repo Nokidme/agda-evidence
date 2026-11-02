@@ -1,6 +1,6 @@
 # Host-owned research workflow API
 
-`ResearchWorkspace` connects goal selection, context inspection, explicit lexical discovery, non-filling expression trials and exact evidence display behind one JSON-ready Python API. It is a library-side integration point, **not a running AgdaLab feature or a replacement editor**. The actual AgdaLab application repository/attached website was unavailable in this session; its routes, authentication, editor buffers and UI have not been changed.
+`ResearchWorkspace` connects goal selection, context inspection, explicit lexical discovery, non-filling expression trials and exact evidence display behind one JSON-ready Python API. It is a library-side integration point, **not a running AgdaLab feature or a replacement editor**. This change neither edits nor deploys the actual AgdaLab application: connecting an editor requires its own authorized routes, buffer materialization and UI integration.
 
 The facade adds no dependency, HTTP server, shell tool, model provider, billing, automatic imports, proof insertion or new evidence certificate. Existing goal/candidate artifacts and catalog provenance keep their original identities and claims. The real host application decides its worker/transport and authorizes every request.
 
@@ -40,6 +40,8 @@ Requests contain exactly `requestId`, `op`, `revision` and `args`. Each response
 Top-level status is `ok`, `error` or `stale`. **API `ok` is not Agda acceptance or proof success.** A valid failed trial is `ok` at this transport-independent layer with `result.outcome.status: query-error`. The UI must present the native outcome, not a green badge based on API status or successful offline verification.
 
 `currentRevision` is an opaque per-instance generation token, not a source hash, kernel certificate or durable project version. `workspace.sourceId` and `workspace.resolutionId` remain the existing source and partial-native-resolution subjects. Request IDs are correlation labels, not deduplication/idempotency keys; replaying a candidate request starts another trial.
+
+Status and historical reads may use null revision to observe the latest state or retrieve old evidence. If either read supplies a non-null revision, it is a precondition and must match current; it is never silently ignored. A pinned read whose live inputs cannot be observed fails rather than satisfying that precondition from cached state.
 
 ## Supported operations
 
@@ -116,5 +118,7 @@ python scripts/research-pilot.py --agda-bin /usr/bin/agda \
 ```
 
 The finite fixture connects the API end to end: listing → context → bounded project search → verified catalog hit → explicit elaboration and rejection trials → exact record retrieval → dirty/revision invalidation → historical evidence. It also proves that a catalog hit is not automatically imported: `Example.identity n` still fails in the example goal module. Only a disposable external workspace is edited in the invalidation case; original examples remain unchanged. API exchanges are a workflow log, not a new proof certificate; the included native records remain independently verifiable.
+
+See the [independently verified native result](pilots/research-api-result-2026-11-02.md) for exact identities, source bindings and the recorded assurance limits.
 
 To complete the live AgdaLab feature, attach its existing repository/site, map authorized project/document IDs and materialized revisions to this facade, wire edit/save notifications, and add a research panel using the existing editor's UI conventions. Display current goal/context, lexical results/provenance, explicit trial input, native outcomes and current/stale evidence separately. No live editor integration is claimed until that application code and runtime have actually been changed and validated.
