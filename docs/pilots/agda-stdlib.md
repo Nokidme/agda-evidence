@@ -49,6 +49,10 @@ The first pinned run passed on 30 October 2026. Its independently verified ident
 
 The follow-up pinned run attached and independently verified a source-bound lexical declaration index while preserving the same upstream typecheck gate. Its index identifier, query result, and boundaries are recorded in [the source-index result](agda-stdlib-index-result-2026-10-30.md).
 
+## Checker result
+
+The 2 November 2026 follow-up preserved that gate and separately recorded Agda 2.8.0's displayed addition type. Both downloaded artifacts and their basis identities were independently verified. See the [checker result](checker-result-2026-11-02.md) for exact identifiers, transcript counts, and reproduction commands.
+
 ## Sources
 
 - [agda-stdlib Ubuntu CI](https://github.com/agda/agda-stdlib/blob/master/.github/workflows/ci-ubuntu.yml)

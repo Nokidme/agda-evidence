@@ -83,6 +83,10 @@ The adapter therefore does not reinterpret Agda's textual `WhyInScope` explanati
 
 Loading may generate normal interface/cache files inside the temporary copy and compiler-managed builtin locations. The original source tree is not used as the working copy, and captured staged regular source inputs are checked for unexpected changes. This is source-copy isolation, not a security sandbox for a hostile compiler, reflection code, source options, or all host filesystem/network effects.
 
+## Real-library validation
+
+The [2 November 2026 checker pilot](pilots/checker-result-2026-11-02.md) preserved the standard library's native gate and separately recorded Agda 2.8.0's `ℕ → ℕ → ℕ` result for `_+_`. The downloaded observation was verified locally and its source/resolution/bundle basis matched the independently verified project artifact.
+
 ## Protocol references
 
 The constructor and response shapes were source-checked against Agda v2.6.4.3 and v2.8.0; local end-to-end tests use installed Agda 2.6.3. These references are not a blanket compatibility guarantee:
