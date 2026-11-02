@@ -74,6 +74,8 @@ python scripts/candidates-pilot.py --agda-bin /usr/bin/agda \
 
 It records a listing and seven independent trials: Nat local, Unicode local, dependent reflexivity, wrong type, absent name, bare underscore, and an unused-meta expression that demonstrates the assurance limit. The manual native workflow checks original source cleanliness and retains these separate records, rather than aggregating failures into a green proof claim. The observed distro compiler is recorded; the apt package closure is not archived.
 
+The [2 November 2026 native pilot result](pilots/candidates-result-2026-11-02.md) records the successful remote run, independently verified identifiers and exact outcomes, including the unused-meta assurance counterexample and download/verification commands.
+
 This is one explicit candidate at one existing native-project goal, not a search engine, batch agent, implicit dependency solver, Nix adapter, or automatic proof editor. Source snapshots are manifests rather than source archives. Hashes establish internal consistency, not producer authenticity or resistance to consistently fabricated transcripts. Loading can write dependency/primitive caches outside regular-source identity policy, and reflection can have external effects. Isolated source copies are not an operating-system sandbox or offline source/toolchain replay.
 
 ## References
