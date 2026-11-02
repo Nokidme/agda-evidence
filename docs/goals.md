@@ -68,6 +68,8 @@ List/inspect exit zero only for their successful statuses. A saved failure or ev
 
 An inspected goal is still an unfilled proof obligation. `--safe` records the requested compiler setting but does not complete the proof or certify informal mathematical intent. This adapter does not weaken clean-only inference or enable proof actions. It handles one existing native project, not Nix activation or implicit dependencies; client/library composition for unfinished goals is a separate future adapter.
 
+The separate [candidate trial adapter](candidates.md) uses an accepted listing to try one explicit expression without filling the selected goal. It saves candidate-observation-v1 rather than changing goal-observation-v1. Its positive `elaborated` status deliberately does not certify candidate-local residual freedom or insertion-related proof checks.
+
 The original source is not used as the writable working copy, and staged regular inputs are hashed before/after queries. Loading can write interface caches for clean dependencies or compiler-provided primitives even with `--ignore-interfaces`. Copy isolation is not a hostile-compiler security sandbox or a promise of no host filesystem/network effects. [1] [2]
 
 Snapshots are file manifests, not source archives. Hashes establish internal consistency, not producer authenticity or protection against a consistently fabricated transcript. These records support inspection/research provenance, not offline source/toolchain replay or a proof certificate.

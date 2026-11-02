@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agda-evidence non-filling contextual candidate elaboration v1",
+  "description": "An elaborated result is not candidate-local residual freedom, insertion acceptance, or proof completion.",
+  "type": "object", "additionalProperties": false,
+  "required": ["format", "observationId", "snapshot", "resolution", "listing", "query", "execution", "transcript", "transport", "result"],
+  "properties": {
+    "format": {"const": "agda-evidence/candidate-observation-v1"},
+    "observationId": {"$ref": "#/$defs/digest"},
+    "snapshot": {"$ref": "type-observation-v1.schema.json#/properties/snapshot"},
+    "resolution": {"$ref": "type-observation-v1.schema.json#/properties/resolution"},
+    "listing": {"allOf": [
+      {"$ref": "goal-observation-v1.schema.json"},
+      {"properties": {"listing": {"type": "null"}, "query": {"properties": {"operation": {"const": "list"}}}, "result": {"properties": {"status": {"const": "listed"}}}}}
+    ]},
+    "query": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "sourceSha256", "operation", "goalId", "includes", "safe", "rewrite", "loadPolicy", "expression", "candidatePolicy"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "sourceSha256": {"$ref": "#/$defs/digest"},
+        "operation": {"const": "check"},
+        "goalId": {"type": "integer", "minimum": 0},
+        "includes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "safe": {"type": "boolean"},
+        "rewrite": {"const": "Simplified"},
+        "loadPolicy": {"const": "unfinished-no-diagnostics-v1"},
+        "expression": {"type": "string", "minLength": 1, "maxLength": 65536, "description": "The CLI also enforces a stricter 65536-byte UTF-8 cap; the expression is not trimmed or rewritten."},
+        "candidatePolicy": {"const": "contextual-elaboration-restored-goals-v1"}
+      }
+    },
+    "execution": {"$ref": "type-observation-v1.schema.json#/properties/execution"},
+    "transport": {"$ref": "type-observation-v1.schema.json#/properties/transport"},
+    "transcript": {
+      "type": "array", "maxItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["phase", "request", "responses", "complete"],
+        "properties": {
+          "phase": {"enum": ["startup", "load", "check", "postflight"]},
+          "request": {"type": ["string", "null"]},
+          "complete": {"type": "boolean"},
+          "responses": {"type": "array", "items": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}}}
+        }
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "assurance", "selected", "postflightUnchanged"],
+      "properties": {
+        "status": {"enum": ["elaborated", "load-error", "load-blocked", "selection-error", "query-error", "postflight-error", "postflight-blocked", "postflight-changed", "protocol-error", "execution-error", "timed-out", "output-limit"]},
+        "assurance": {"const": "contextual-elaboration-only"},
+        "postflightUnchanged": {"type": ["boolean", "null"]},
+        "selected": {"oneOf": [
+          {"type": "null"},
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "range", "type", "term", "entries", "boundary", "outputForms"],
+            "properties": {
+              "id": {"type": "integer", "minimum": 0},
+              "range": {"$ref": "goal-observation-v1.schema.json#/$defs/ranges"},
+              "type": {"type": "string", "minLength": 1},
+              "term": {"type": "string", "minLength": 1},
+              "entries": {"type": "array", "items": {
+                "type": "object", "required": ["originalName", "reifiedName", "binding", "inScope"],
+                "properties": {"originalName": {"type": "string"}, "reifiedName": {"type": "string"}, "binding": {"type": "string"}, "inScope": {"type": "boolean"}}
+              }},
+              "boundary": {"type": "array", "items": {"type": "string"}},
+              "outputForms": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        ]}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "elaborated"}}},
+         "then": {"properties": {"selected": {"type": "object"}, "postflightUnchanged": {"const": true}}},
+         "else": {"properties": {"selected": {"type": "null"}}}}
+      ]
+    }
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

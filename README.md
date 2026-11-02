@@ -132,6 +132,17 @@ agda-evidence goals verify /tmp/goal-context.json
 
 The result retains displayed type, structured local bindings, and goal-related constraint/boundary text. It never fills holes or declares the proof complete. Unfinished loads may have `checked: false`; a separate conservative policy blocks unrelated warnings/errors without weakening clean-only type inference. See the [goal inspection guide](docs/goals.md).
 
+## Try a proposed expression without filling the goal
+
+```sh
+agda-evidence goals check --project-root examples/goal-query \
+  --listing /tmp/goals.list.json --goal-id 0 --expression 'n' \
+  --output /tmp/candidate-n.json
+agda-evidence goals verify-check /tmp/candidate-n.json
+```
+
+Agda checks against the selected goal's contextual expected type, then the adapter verifies that the restored goal summary is unchanged. The positive status is **`elaborated`**, not proof completion or candidate-local obligation freedom: Agda discards speculative checking state before those diagnostics are collected. No expression is inserted and every trial gets a fresh isolated session. See the [candidate guide](docs/candidates.md), including a native unused-meta counterexample to stronger claims.
+
 ## Verify a bundle
 
 ```sh

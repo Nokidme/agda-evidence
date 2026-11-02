@@ -10,6 +10,7 @@ from typing import Sequence
 
 from . import __version__
 from .catalog import CatalogValidationError, create_catalog, query_catalog, verify_catalog
+from .candidates import check_candidate, load_candidate_observation, write_candidate_observation
 from .checker import CheckerEvidenceError, infer_type, load_observation, write_observation
 from .client import client_summary, infer_client, load_client_observation, write_client_observation
 from .goals import load_goal_observation, observe_goals, write_goal_observation
@@ -172,7 +173,11 @@ def build_parser() -> argparse.ArgumentParser:
     goal_inspect = goal_commands.add_parser("inspect", help="query one explicit goal under a prior listing's source/policy pins")
     goal_inspect.add_argument("--listing", type=Path, required=True, action=_Once)
     goal_inspect.add_argument("--goal-id", type=int, required=True, action=_Once)
-    for command in (goal_list, goal_inspect):
+    goal_check = goal_commands.add_parser("check", help="try one expression against a selected goal without filling it")
+    goal_check.add_argument("--listing", type=Path, required=True, action=_Once)
+    goal_check.add_argument("--goal-id", type=int, required=True, action=_Once)
+    goal_check.add_argument("--expression", required=True, action=_Once)
+    for command in (goal_list, goal_inspect, goal_check):
         command.add_argument("--project-root", type=Path, required=True, action=_Once)
         command.add_argument("--output", type=Path, required=True, action=_Once)
         command.add_argument("--agda-bin", default="agda", action=_Once)
@@ -180,6 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--max-output-bytes", type=int, default=4_194_304, action=_Once)
     goal_verify = goal_commands.add_parser("verify", help="verify a saved goal observation without Agda")
     goal_verify.add_argument("observation", type=Path)
+    goal_verify_check = goal_commands.add_parser("verify-check", help="verify a saved candidate trial without Agda")
+    goal_verify_check.add_argument("observation", type=Path)
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -385,26 +392,36 @@ def _client(arguments: argparse.Namespace) -> int:
 def _goals(arguments: argparse.Namespace) -> int:
     if arguments.goals_command == "verify":
         value = load_goal_observation(arguments.observation)
+    elif arguments.goals_command == "verify-check":
+        value = load_candidate_observation(arguments.observation)
     else:
         output = arguments.output
         if output.exists() or output.is_symlink():
             raise EvidenceError(f"goal observation output already exists: {output}")
         if output.resolve().is_relative_to(arguments.project_root.resolve()):
             raise EvidenceError("goal observation output must be outside the project root")
-        listing = load_goal_observation(arguments.listing) if arguments.goals_command == "inspect" else None
-        value = observe_goals(
-            arguments.project_root, listing["query"]["file"] if listing else arguments.file,
-            agda_binary=arguments.agda_bin,
-            includes=listing["query"]["includes"] if listing else arguments.include,
-            safe=listing["query"]["safe"] if listing else arguments.safe,
-            listing=listing, goal_id=arguments.goal_id if listing else None,
-            timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
-        )
-        write_goal_observation(output, value)
+        listing = load_goal_observation(arguments.listing) if arguments.goals_command in {"inspect", "check"} else None
+        if arguments.goals_command == "check":
+            value = check_candidate(
+                arguments.project_root, listing, arguments.goal_id, arguments.expression,
+                agda_binary=arguments.agda_bin, timeout_seconds=arguments.timeout_seconds,
+                max_output_bytes=arguments.max_output_bytes,
+            )
+            write_candidate_observation(output, value)
+        else:
+            value = observe_goals(
+                arguments.project_root, listing["query"]["file"] if listing else arguments.file,
+                agda_binary=arguments.agda_bin,
+                includes=listing["query"]["includes"] if listing else arguments.include,
+                safe=listing["query"]["safe"] if listing else arguments.safe,
+                listing=listing, goal_id=arguments.goal_id if listing else None,
+                timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
+            )
+            write_goal_observation(output, value)
     print(json.dumps({"observationId": value["observationId"], "sourceId": value["snapshot"]["sourceId"],
                       "resolutionId": value["resolution"]["resolutionId"], "result": value["result"]},
                      ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if arguments.goals_command == "verify" or value["result"]["status"] in {"listed", "inspected"} else 1
+    return 0 if arguments.goals_command in {"verify", "verify-check"} or value["result"]["status"] in {"listed", "inspected", "elaborated"} else 1
 
 
 def _parse_lane_specification(value: str) -> tuple[str, Path]:

@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 import shutil
 import tempfile
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from .checker import (
     AgdaSession, CheckerEvidenceError, SessionError, TRANSPORT_STATUSES,
@@ -21,7 +21,7 @@ from .core import (
 
 GOAL_FORMAT = "agda-evidence/goal-observation-v1"
 LOAD_POLICY = "unfinished-no-diagnostics-v1"
-EDIT_ACTIONS = {"GiveAction", "MakeCase", "SolveAll"}
+EDIT_ACTIONS = {"GiveAction", "MakeCase", "SolveAll", "Mimer"}
 
 
 class GoalEvidenceError(CheckerEvidenceError):
@@ -179,11 +179,15 @@ def goal_result(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _validate(value: Any) -> dict[str, Any]:
+def _validate_capture(
+    value: Any, *, probe_operation: str = "inspect",
+    probe_phases: Sequence[tuple[str, Callable[[str, int], str]]] = (("goal", _goal_request),),
+    extra_query_fields: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     observation = _object(value, "goal observation")
     fields = {"format", "observationId", "snapshot", "resolution", "listing", "query", "execution", "transcript", "transport", "result"}
-    if set(observation) != fields or observation["format"] != GOAL_FORMAT:
-        raise GoalEvidenceError("goal observation has unsupported fields or format")
+    if set(observation) != fields:
+        raise GoalEvidenceError("goal capture has unsupported fields")
     snapshot = _object(observation["snapshot"], "goal snapshot")
     if snapshot.get("format") != "agda-evidence/snapshot-v1" or snapshot.get("treeAlgorithm") != "sha256":
         raise GoalEvidenceError("goal snapshot has unsupported format")
@@ -199,7 +203,7 @@ def _validate(value: Any) -> dict[str, Any]:
     if resolution.get("resolutionId") != derive_resolution_id(resolution):
         raise GoalEvidenceError("goal resolution identity does not match its projection")
     query = _object(observation["query"], "goal query")
-    if set(query) != {"file", "sourceSha256", "operation", "goalId", "includes", "safe", "rewrite", "loadPolicy"}:
+    if set(query) != {"file", "sourceSha256", "operation", "goalId", "includes", "safe", "rewrite", "loadPolicy"} | extra_query_fields:
         raise GoalEvidenceError("goal query has unsupported fields")
     file = _indexable_source_path(query["file"], "goal file")
     file_record = next((r for r in records if r["path"] == file), None)
@@ -214,7 +218,7 @@ def _validate(value: Any) -> dict[str, Any]:
     if query["operation"] == "list":
         if query["goalId"] is not None or prior is not None:
             raise GoalEvidenceError("a goal listing must not contain a selection or prior observation")
-    elif query["operation"] == "inspect":
+    elif query["operation"] == probe_operation:
         _goal_id(query["goalId"])
         if not isinstance(query["goalId"], int):
             raise GoalEvidenceError("selected goal ID must be a scalar integer")
@@ -246,13 +250,13 @@ def _validate(value: Any) -> dict[str, Any]:
     if prior is not None and _parse_timestamp(prior["execution"]["finishedAt"], "prior listing finish") > started:
         raise GoalEvidenceError("inspection began before the prior listing finished")
     transcript = observation["transcript"]
-    limit = 2 if query["operation"] == "list" else 3
+    limit = 2 if query["operation"] == "list" else 2 + len(probe_phases)
     if not isinstance(transcript, list) or len(transcript) > limit:
         raise GoalEvidenceError("goal transcript has unsupported phase count")
     for number, record in enumerate(transcript):
         record = _object(record, "goal phase")
-        phase = ("startup", "load", "goal")[number]
-        request = None if number == 0 else (_request(f"$PROJECT_ROOT/{file}", "load", "") if number == 1 else _goal_request(f"$PROJECT_ROOT/{file}", query["goalId"]))
+        phase = ("startup", "load")[number] if number < 2 else probe_phases[number - 2][0]
+        request = None if number == 0 else (_request(f"$PROJECT_ROOT/{file}", "load", "") if number == 1 else probe_phases[number - 2][1](f"$PROJECT_ROOT/{file}", query["goalId"]))
         if set(record) != {"phase", "request", "responses", "complete"} or record["phase"] != phase or record["request"] != request:
             raise GoalEvidenceError("goal phase/request does not match the recorded operation")
         if not isinstance(record["complete"], bool) or not isinstance(record["responses"], list) or any(not isinstance(m, dict) or not isinstance(m.get("kind"), str) for m in record["responses"]):
@@ -273,6 +277,15 @@ def _validate(value: Any) -> dict[str, Any]:
         raise GoalEvidenceError("goal transport has unsupported status or fields")
     if not isinstance(transport["stderr"], str) or (transport["message"] is not None and not isinstance(transport["message"], str)) or not isinstance(transport["stdoutBytes"], int) or isinstance(transport["stdoutBytes"], bool) or transport["stdoutBytes"] < 0:
         raise GoalEvidenceError("goal transport diagnostics are invalid")
+    return observation
+
+
+def _validate(value: Any) -> dict[str, Any]:
+    observation = _object(value, "goal observation")
+    if observation.get("format") != GOAL_FORMAT:
+        raise GoalEvidenceError("goal observation has an unsupported format")
+    _validate_capture(observation)
+    resolution = observation["resolution"]
     if canonical_json_bytes(observation["result"]) != canonical_json_bytes(goal_result(observation)):
         raise GoalEvidenceError("goal result does not match retained responses")
     if observation["result"]["status"] in {"listed", "inspected"}:
@@ -291,10 +304,11 @@ def validate_goal_observation(value: Any) -> dict[str, Any]:
         raise GoalEvidenceError(str(error)) from error
 
 
-def observe_goals(
+def _capture_goals(
     project_root: Path, file: str, *, agda_binary: str = "agda", includes: Sequence[str] = (), safe: bool = False,
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
     listing: dict[str, Any] | None = None, goal_id: int | None = None,
+    probe_phases: Sequence[tuple[str, Callable[[str, int], str]]] = (("goal", _goal_request),),
 ) -> dict[str, Any]:
     if os.name != "posix":
         raise EvidenceError("the native goal adapter currently requires POSIX")
@@ -302,9 +316,8 @@ def observe_goals(
         listing = validate_goal_observation(listing)
         if listing["query"]["operation"] != "list" or listing["result"]["status"] != "listed":
             raise GoalEvidenceError("inspection requires an accepted saved listing")
-        _goal_id(goal_id)
-        if not isinstance(goal_id, int):
-            raise EvidenceError("goal ID must be a scalar integer")
+        if not isinstance(goal_id, int) or isinstance(goal_id, bool) or goal_id < 0:
+            raise EvidenceError("goal ID must be a non-negative scalar integer")
         if _selected(listing["result"]["goals"], goal_id) is None:
             raise EvidenceError("goal ID is not a selectable interaction point in the listing")
         file, includes, safe = listing["query"]["file"], listing["query"]["includes"], listing["query"]["safe"]
@@ -355,9 +368,12 @@ def observe_goals(
             if f"sha256:{sha256_file(binary)}" != resolution["agda"].get("binarySha256"):
                 raise GoalEvidenceError("goal compiler changed after resolution capture")
             session = AgdaSession(_argv(str(binary), roots, safe, anchor=str(stage)), stage, timeout_seconds, max_output_bytes)
-            for phase in ("startup", "load", "goal") if listing else ("startup", "load"):
-                actual = None if phase == "startup" else (_request(str(stage / file), "load", "") if phase == "load" else _goal_request(str(stage / file), goal_id))
-                logical = None if phase == "startup" else (_request(f"$PROJECT_ROOT/{file}", "load", "") if phase == "load" else _goal_request(f"$PROJECT_ROOT/{file}", goal_id))
+            phases = [("startup", None), ("load", lambda path, _: _request(path, "load", ""))]
+            if listing:
+                phases.extend(probe_phases)
+            for phase, builder in phases:
+                actual = None if builder is None else builder(str(stage / file), goal_id)
+                logical = None if builder is None else builder(f"$PROJECT_ROOT/{file}", goal_id)
                 record = {"phase": phase, "request": logical, "responses": [], "complete": False}
                 value["transcript"].append(record); session.exchange(record, actual)
                 if _info(record["responses"], "Error") or any(message.get("kind") in EDIT_ACTIONS for message in record["responses"]):
@@ -381,6 +397,18 @@ def observe_goals(
         if build_snapshot(stage)[0]["sourceId"] != snapshot["sourceId"]:
             raise GoalEvidenceError("goal queries modified captured regular source inputs")
     value["execution"]["finishedAt"] = utc_now()
+    return value
+
+
+def observe_goals(
+    project_root: Path, file: str, *, agda_binary: str = "agda", includes: Sequence[str] = (), safe: bool = False,
+    timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
+    listing: dict[str, Any] | None = None, goal_id: int | None = None,
+) -> dict[str, Any]:
+    value = _capture_goals(
+        project_root, file, agda_binary=agda_binary, includes=includes, safe=safe,
+        timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes, listing=listing, goal_id=goal_id,
+    )
     value["result"] = goal_result(value)
     value["observationId"] = goal_observation_id(value)
     return validate_goal_observation(value)

@@ -20,5 +20,6 @@
 - Adds one-library client expression observations with exact lexical selection context, pinned source composition, complete embedded evidence, and offline cross-binding checks.
 - Anchors newly executed checker include paths to the staged workspace while retaining the original relative-argv v1 verification profile; client envelopes require anchored argv.
 - Adds bounded read-only unfinished-goal listings and prior-listing-pinned combined type/context observations, with a separate diagnostic policy and no proof edits.
+- Adds non-filling, source-pinned candidate elaboration trials with exact restored-goal postflight checks; positive results deliberately do not certify candidate-local residual freedom or proof completion.
 
 This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.
