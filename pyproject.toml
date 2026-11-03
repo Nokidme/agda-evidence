@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agda-evidence"
-version = "0.1.0a0"
+dynamic = ["version"]
 description = "Create portable evidence bundles for explicit Agda project checks."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 authors = [{name = "agda-evidence contributors"}]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -22,8 +22,17 @@ classifiers = [
 [project.scripts]
 agda-evidence = "agda_evidence.cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[project.urls]
+Repository = "https://github.com/Nokidme/agda-evidence"
+Issues = "https://github.com/Nokidme/agda-evidence/issues"
+Documentation = "https://github.com/Nokidme/agda-evidence/tree/main/docs"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+package-dir = {"" = "src", "agda_evidence.schemas" = "schemas"}
+packages = ["agda_evidence", "agda_evidence.schemas"]
+
+[tool.setuptools.dynamic]
+version = {attr = "agda_evidence.__version__"}
+
+[tool.setuptools.package-data]
+"agda_evidence.schemas" = ["*.schema.json"]

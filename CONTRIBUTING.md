@@ -12,4 +12,6 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
+Packaging changes must also pass clean wheel and source-archive installs outside the checkout with `scripts/check-distributions.py` and `scripts/package-smoke.py`; see [the alpha release guide](docs/alpha-release.md). Keep schemas canonical under `schemas/`: setuptools maps that directory to the installed `agda_evidence.schemas` resource package, so do not maintain a second copied schema family. The package version constant in `src/agda_evidence/__init__.py` supplies distribution and CLI versions. Native compiler tests and non-native distribution tests make different claims; record the actual compiler/version and preserve that distinction.
+
 Contributions are licensed under the Apache License 2.0.

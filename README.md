@@ -6,7 +6,7 @@ It is intentionally small and local. It does not choose a build command, fetch o
 
 ## Status
 
-This is a pre-alpha reference implementation of the v1 bundle contract. The core has no runtime dependencies beyond Python 3.11+.
+This is a bounded alpha reference implementation (`0.1.0a1`) of the v1 bundle contract and optional research adapters, not a stable API. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for the exact tested scope and release procedure.
 
 A passed bundle means only that the **recorded explicit command** exited successfully in an isolated copy of the recorded project source. It does not claim a full dependency closure, offline replayability, all-project coverage, or structured Agda diagnostics.
 
@@ -25,6 +25,8 @@ Or run directly from a checkout:
 ```sh
 PYTHONPATH=src python -m agda_evidence --help
 ```
+
+Built wheel and source distributions include all versioned JSON schemas as `agda_evidence.schemas` resources; the source archive also retains documentation and examples. The alpha CI checks both installations outside the checkout. Agda itself must be installed separately; native interaction adapters require POSIX and an explicitly supported source/dependency profile. Do not infer compiler/platform support from the wheel's `py3-none-any` tag.
 
 ## Capture a project check
 

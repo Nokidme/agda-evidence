@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0a1 — alpha candidate
+
+- Distributes all ten canonical versioned JSON schemas as `agda_evidence.schemas` resources in both wheel and source archive, preserving relative schema references.
+- Includes contract/pilot documentation, source examples, tests and reusable scripts in source distributions.
+- Derives package metadata and CLI version from the single package version constant.
+- Adds external fresh-environment wheel/source installation checks and an installed-artifact CI matrix, separate from editable source tests.
+- Documents exact Python/platform/compiler observation levels and explicitly unsupported runtime profiles; no stronger evidence claims or format changes.
+
 ## 0.1.0a0 — unreleased
 
 - Defines the `agda-evidence/bundle-v1` manifest schema.
@@ -23,4 +31,4 @@
 - Adds non-filling, source-pinned candidate elaboration trials with exact restored-goal postflight checks; positive results deliberately do not certify candidate-local residual freedom or proof completion.
 - Adds a host-owned research workspace API with document/record IDs, project/catalog lexical search, selected goal/trial evidence, editor generation and live-input freshness guards, and bounded immutable session history; no editor deployment or public server is implied.
 
-This is a pre-alpha reference implementation. It does not resolve or fetch dependencies, parse all Agda diagnostics, prove a dependency closure, or guarantee offline replay.
+This history records the pre-alpha reference implementation. Neither the pre-alpha nor the bounded alpha resolves or fetches dependencies, parses all Agda diagnostics, proves a dependency closure, or guarantees offline replay.

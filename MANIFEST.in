@@ -1,0 +1,9 @@
+include LICENSE README.md CHANGELOG.md CONTRIBUTING.md
+recursive-include schemas *.py *.schema.json
+recursive-include docs *.md
+recursive-include examples *.agda *.agda-lib
+recursive-include scripts *.py
+recursive-include tests *.py
+exclude .env
+exclude .env.*
+global-exclude __pycache__ *.py[cod] *.agdai

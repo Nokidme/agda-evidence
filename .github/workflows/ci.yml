@@ -4,9 +4,12 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -18,3 +21,75 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e .
       - run: python -m unittest discover -s tests -v
+
+  distributions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build --outdir dist
+      - run: python -m twine check dist/*.whl dist/*.tar.gz
+      - name: Record artifact checksums
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-distributions-${{ github.sha }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  installed-package:
+    needs: distributions
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+        python-version: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: alpha-distributions-${{ github.sha }}
+          path: ${{ runner.temp }}/agda-alpha-dist
+      - name: Check clean wheel and source installs outside the checkout
+        run: >-
+          python scripts/check-distributions.py
+          --dist-dir "${{ runner.temp }}/agda-alpha-dist"
+          --smoke-script scripts/package-smoke.py
+
+  native-installed-package:
+    needs: distributions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: alpha-distributions-${{ github.sha }}
+          path: ${{ runner.temp }}/agda-alpha-dist
+      - name: Install native compiler separately from the Python package
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+      - name: Check both installed artifacts with real native Agda
+        run: >-
+          python scripts/check-distributions.py
+          --dist-dir "${{ runner.temp }}/agda-alpha-dist"
+          --smoke-script scripts/package-smoke.py
+          --agda-bin /usr/bin/agda
