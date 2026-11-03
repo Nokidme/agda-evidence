@@ -14,6 +14,10 @@ from .candidates import check_candidate, load_candidate_observation, write_candi
 from .checker import CheckerEvidenceError, infer_type, load_observation, write_observation
 from .client import client_summary, infer_client, load_client_observation, write_client_observation
 from .goals import load_goal_observation, observe_goals, write_goal_observation
+from .sources import (
+    check_source_candidate, load_source_observation, observe_source_goals,
+    source_summary, write_source_observation,
+)
 from .core import (
     DECLARATION_KINDS,
     EvidenceError,
@@ -187,6 +191,29 @@ def build_parser() -> argparse.ArgumentParser:
     goal_verify.add_argument("observation", type=Path)
     goal_verify_check = goal_commands.add_parser("verify-check", help="verify a saved candidate trial without Agda")
     goal_verify_check.add_argument("observation", type=Path)
+
+    source = subparsers.add_parser("source", help="inspect unfinished clients with one explicitly pinned source dependency")
+    source_commands = source.add_subparsers(dest="source_command", required=True)
+    source_list = source_commands.add_parser("list", help="list client goals in a pinned source composition")
+    source_list.add_argument("--file", required=True, action=_Once)
+    source_list.add_argument("--include", action="append", default=[], help="additional explicit client-relative include")
+    source_list.add_argument("--safe", action="store_true")
+    source_inspect = source_commands.add_parser("inspect", help="inspect a goal under its prior composition pins")
+    source_check = source_commands.add_parser("check", help="try an explicit expression without filling a composed client goal")
+    for command in (source_inspect, source_check):
+        command.add_argument("--listing", type=Path, required=True, action=_Once)
+        command.add_argument("--goal-id", type=int, required=True, action=_Once)
+    source_check.add_argument("--expression", required=True, action=_Once)
+    for command in (source_list, source_inspect, source_check):
+        for flag in ("--project-root", "--dependency-root", "--dependency-bundle", "--output"):
+            command.add_argument(flag, type=Path, required=True, action=_Once)
+        command.add_argument("--dependency-include", action="append", required=True,
+                             help="explicit dependency-relative include; must agree with a prior listing")
+        command.add_argument("--agda-bin", default="agda", action=_Once)
+        command.add_argument("--timeout-seconds", type=int, default=60, action=_Once)
+        command.add_argument("--max-output-bytes", type=int, default=4_194_304, action=_Once)
+    source_verify = source_commands.add_parser("verify", help="verify a complete source envelope offline without its live roots")
+    source_verify.add_argument("observation", type=Path)
 
     aggregate = subparsers.add_parser(
         "aggregate",
@@ -431,6 +458,39 @@ def _parse_lane_specification(value: str) -> tuple[str, Path]:
     return name, Path(raw_path)
 
 
+def _source(arguments: argparse.Namespace) -> int:
+    if arguments.source_command == "verify":
+        value = load_source_observation(arguments.observation)
+        print(json.dumps(source_summary(value), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    output = arguments.output
+    if output.exists() or output.is_symlink():
+        raise EvidenceError(f"source observation output already exists: {output}")
+    for root in (arguments.project_root, arguments.dependency_root, arguments.dependency_bundle):
+        if output.resolve().is_relative_to(root.resolve()):
+            raise EvidenceError("source observation output must be outside client, dependency and evidence roots")
+    common = dict(
+        dependency_bundle=arguments.dependency_bundle, dependency_root=arguments.dependency_root,
+        dependency_includes=arguments.dependency_include, agda_binary=arguments.agda_bin,
+        timeout_seconds=arguments.timeout_seconds, max_output_bytes=arguments.max_output_bytes,
+    )
+    listing = load_source_observation(arguments.listing) if arguments.source_command != "list" else None
+    if arguments.source_command == "check":
+        value = check_source_candidate(arguments.project_root, listing, arguments.goal_id,
+                                       arguments.expression, **common)
+    else:
+        value = observe_source_goals(
+            arguments.project_root,
+            listing["observation"]["query"]["file"].removeprefix("client/") if listing else arguments.file,
+            includes=listing["composition"]["clientIncludes"] if listing else arguments.include,
+            safe=listing["observation"]["query"]["safe"] if listing else arguments.safe,
+            listing=listing, goal_id=arguments.goal_id if listing else None, **common,
+        )
+    write_source_observation(output, value)
+    print(json.dumps(source_summary(value), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if value["observation"]["result"]["status"] in {"listed", "inspected", "elaborated"} else 1
+
+
 def _aggregate_create(arguments: argparse.Namespace) -> int:
     aggregate = create_aggregate(
         arguments.output,
@@ -484,6 +544,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _client(arguments)
         if arguments.subcommand == "goals":
             return _goals(arguments)
+        if arguments.subcommand == "source":
+            return _source(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "create":
             return _aggregate_create(arguments)
         if arguments.subcommand == "aggregate" and arguments.aggregate_command == "verify":

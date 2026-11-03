@@ -6,7 +6,7 @@ It is intentionally small and local. It does not choose a build command, fetch o
 
 ## Status
 
-This is a bounded alpha reference implementation (`0.1.0a1`) of the v1 bundle contract and optional research adapters, not a stable API. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for the exact tested scope and release procedure.
+The published bounded alpha is [`v0.1.0a1`](https://github.com/Nokidme/agda-evidence/releases/tag/v0.1.0a1); the main branch now contains unreleased `0.1.0a2.dev0` development. Neither is a stable API. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for the release's exact tested scope and procedure.
 
 A passed bundle means only that the **recorded explicit command** exited successfully in an isolated copy of the recorded project source. It does not claim a full dependency closure, offline replayability, all-project coverage, or structured Agda diagnostics.
 
@@ -150,6 +150,12 @@ Agda checks against the selected goal's contextual expected type, then the adapt
 The optional Python `ResearchWorkspace` facade joins host-configured document IDs, goal selection, project/catalog lexical discovery, explicit candidate trials and complete evidence retrieval. Requests carry an editor revision; dirty buffers, source/compiler changes and late results are not promoted as current. A bounded session store retains current or historical exact artifacts without allowing client-supplied host paths or compiler commands.
 
 See the [research API guide](docs/research-api.md) and `scripts/research-pilot.py`. This is a library integration contract, not a replacement editor or a claim that a live AgdaLab deployment has already been modified. The host must provide authorization, revision materialization and execution isolation.
+
+## Use an explicit source dependency in unfinished client work
+
+The unreleased `source list/inspect/check/verify` family composes unchanged client sources with **one complete pinned native source dependency**, without requiring a lexical candidate selection or declaration index. A separate source envelope binds original source/environment subjects, the exact dependency bundle, declared include roots and the unchanged inner goal/candidate records. Saved selections inherit their complete composition pins; native work never adds imports or fills holes.
+
+See the [source dependency guide](docs/sources.md) and the finite `scripts/sources-pilot.py` stdlib example. This does not activate Nix, resolve transitive dependencies, preserve a replayable closure or automatically upgrade the existing `ResearchWorkspace` runtime profile. Candidate success still means contextual elaboration only.
 
 ## Verify a bundle
 

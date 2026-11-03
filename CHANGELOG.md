@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0a1 — alpha candidate
+## 0.1.0a2.dev0 — unreleased
+
+- Adds explicit one-dependency source composition for unfinished-client goal listing, selected context and non-filling expression trials, with a separate source-observation-v1 envelope.
+- Retains full dependency evidence and fresh original-client/dependency native resolution pins, explicit include policy, exact source unions and original native observations.
+- Adds pre-interaction composition guards and post-operation source/environment checks without changing existing native v1 artifact formats or enabling implicit library resolution.
+
+## 0.1.0a1 — 3 November 2026
 
 - Distributes all ten canonical versioned JSON schemas as `agda_evidence.schemas` resources in both wheel and source archive, preserving relative schema references.
 - Includes contract/pilot documentation, source examples, tests and reusable scripts in source distributions.

@@ -47,9 +47,10 @@ SCHEMA_NAMES = frozenset({
     "local-catalog-v1.schema.json",
     "research-request-v1.schema.json",
     "research-response-v1.schema.json",
+    "source-observation-v1.schema.json",
     "type-observation-v1.schema.json",
 })
-PUBLIC_MODULES = ("checker", "client", "goals", "candidates", "research", "catalog")
+PUBLIC_MODULES = ("checker", "client", "goals", "candidates", "research", "catalog", "sources")
 
 
 class SmokeFailure(Exception):
@@ -445,6 +446,7 @@ def main() -> int:
                 fixture_workflows(cli, root, app_dir)
                 if agda_binary:
                     native_workflow(cli, root, agda_binary)
+                    native_source_workflow(cli, root, agda_binary)
                 else:
                     status("native Agda", "skipped (opt in with --agda-bin); default requires no real Agda")
                 status("PACKAGE SMOKE PASSED", f"version={installed_version}; schemas={count}; installed-artifact workflows verified")
@@ -454,6 +456,57 @@ def main() -> int:
     except Exception as error:
         print(f"PACKAGE SMOKE FAILED: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
         return 1
+
+
+def native_source_workflow(cli: CLI, root: Path, binary: str) -> None:
+    dependency, client = root / "source-dependency", root / "source-client"
+    dependency.mkdir()
+    client.mkdir()
+    (dependency / "Mini.agda").write_text(
+        "{-# OPTIONS --safe #-}\nmodule Mini where\n"
+        "open import Agda.Builtin.Nat public\n"
+        "identity : Nat → Nat\nidentity n = n\n", encoding="utf-8")
+    (client / "Main.agda").write_text(
+        "{-# OPTIONS --safe #-}\nmodule Main where\nopen import Mini\n"
+        "goal : Nat → Nat\ngoal n = {! !}\n", encoding="utf-8")
+    before = (tree_bytes(dependency), tree_bytes(client))
+    bundle = root / "source-dependency.evidence"
+    cli.json("capture", "--project-root", dependency, "--agda-bin", binary, "--output", bundle,
+             "--scope", "native package dependency Mini module check", "--", binary,
+             "--no-libraries", "--ignore-interfaces", "--safe", "-i", ".", "Mini.agda")
+    require(read_object(bundle / "attestation.json")["outcome"]["status"] == "passed",
+            "native source dependency module failed")
+    common = ["--project-root", client, "--dependency-root", dependency,
+              "--dependency-bundle", bundle, "--dependency-include", ".", "--agda-bin", binary]
+    listing_path, context_path, candidate_path = [root / name for name in
+                                               ("source-list.json", "source-context.json", "source-trial.json")]
+    listed = cli.json("source", "list", *common, "--file", "Main.agda", "--safe", "--output", listing_path)
+    listing = read_object(listing_path)
+    require(listing["observation"]["result"]["status"] == "listed", "installed source listing failed")
+    point = listing["observation"]["result"]["goals"][0]["id"]
+    inspected = cli.json("source", "inspect", *common, "--listing", listing_path,
+                         "--goal-id", point, "--output", context_path)
+    checked = cli.json("source", "check", *common, "--listing", listing_path, "--goal-id", point,
+                       "--expression", "Mini.identity n", "--output", candidate_path)
+    context, candidate = read_object(context_path), read_object(candidate_path)
+    require(context["observation"]["result"]["status"] == "inspected", "installed source inspection failed")
+    result = candidate["observation"]["result"]
+    require(result["status"] == "elaborated" and result["assurance"] == "contextual-elaboration-only"
+            and result["postflightUnchanged"] is True, "installed source trial lost its bounded assurance")
+    require("index-ref.json" not in listing["dependency"]["evidence"]["components"],
+            "source availability must not require a lexical candidate index")
+    require(canonical_json_for_smoke(candidate["listing"]) == canonical_json_for_smoke(listing),
+            "source trial did not retain the exact source listing")
+    offline_env = {**cli.environment, "PATH": str(root / "no-executables"), "AGDA_DIR": str(root / "no-registry")}
+    offline = CLI(cli.cwd, offline_env)
+    for path, expected in ((listing_path, listed), (context_path, inspected), (candidate_path, checked)):
+        require(offline.json("source", "verify", path) == expected, "offline source summary changed")
+    require(before == (tree_bytes(dependency), tree_bytes(client)), "native source work modified original source")
+    status("native source list/inspect/check/offline verify", "passed; unindexed pinned dependency; no source edits")
+
+
+def canonical_json_for_smoke(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
 if __name__ == "__main__":

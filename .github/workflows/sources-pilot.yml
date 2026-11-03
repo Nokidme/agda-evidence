@@ -1,0 +1,51 @@
+name: native stdlib source pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Provision the native compiler and development library
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+          python -m pip install -e .
+      - name: Provision the explicit immutable stdlib source separately
+        run: |
+          git clone --no-checkout https://github.com/agda/agda-stdlib.git "$RUNNER_TEMP/stdlib-source"
+          git -C "$RUNNER_TEMP/stdlib-source" checkout --detach 0817da6877aa045932221134913d8511caa78d97
+          test "$(git -C "$RUNNER_TEMP/stdlib-source" rev-parse HEAD)" = 0817da6877aa045932221134913d8511caa78d97
+      - name: Inspect unfinished clients with one pinned source dependency
+        run: |
+          python scripts/sources-pilot.py \
+            --dependency-root "$RUNNER_TEMP/stdlib-source" \
+            --agda-bin /usr/bin/agda --output "$RUNNER_TEMP/native-source-pilot"
+          for record in "$RUNNER_TEMP/native-source-pilot"/*.source.json; do
+            agda-evidence source verify "$record"
+          done
+          agda-evidence verify "$RUNNER_TEMP/native-source-pilot/dependency.evidence"
+          agda-evidence goals verify "$RUNNER_TEMP/native-source-pilot/unmounted.goal.json"
+      - name: Require unchanged original source checkouts
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+          git -C "$RUNNER_TEMP/stdlib-source" diff --exit-code
+          test -z "$(git -C "$RUNNER_TEMP/stdlib-source" ls-files --others --exclude-standard)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-source-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/native-source-pilot
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agda-evidence one-dependency source observation v1",
+  "description": "A portable record of unfinished-client goal work with one pinned native source dependency. Source manifests are not archives or a dependency closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "sourceObservationId", "clientSnapshot", "clientResolution", "dependency", "composition", "observation", "listing"],
+  "properties": {
+    "format": {"const": "agda-evidence/source-observation-v1"},
+    "sourceObservationId": {"$ref": "#/$defs/digest"},
+    "clientSnapshot": {"$ref": "type-observation-v1.schema.json#/properties/snapshot"},
+    "clientResolution": {"$ref": "type-observation-v1.schema.json#/properties/resolution"},
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "nativeResolution"],
+      "properties": {
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest", "components"],
+          "properties": {
+            "manifest": {"$ref": "evidence-bundle-v1.schema.json"},
+            "components": {
+              "type": "object",
+              "required": ["snapshot.json", "resolution.json", "attestation.json", "diagnostics.json"],
+              "propertyNames": {"pattern": "^[^/\\\\]+$", "not": {"enum": [".", "..", "bundle.json"]}},
+              "additionalProperties": {"type": "object"}
+            }
+          }
+        },
+        "nativeResolution": {"$ref": "type-observation-v1.schema.json#/properties/resolution"}
+      }
+    },
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "clientIncludes", "dependencyIncludes"],
+      "properties": {
+        "policy": {"const": "one-dependency-source-copy-v1"},
+        "clientIncludes": {"$ref": "#/$defs/includes"},
+        "dependencyIncludes": {"$ref": "#/$defs/includes"}
+      }
+    },
+    "observation": {
+      "oneOf": [
+        {"$ref": "goal-observation-v1.schema.json"},
+        {"$ref": "candidate-observation-v1.schema.json"}
+      ]
+    },
+    "listing": {
+      "oneOf": [
+        {"type": "null"},
+        {"allOf": [
+          {"$ref": "#"},
+          {"properties": {
+            "listing": {"type": "null"},
+            "observation": {"properties": {
+              "format": {"const": "agda-evidence/goal-observation-v1"},
+              "query": {"properties": {"operation": {"const": "list"}}},
+              "listing": {"type": "null"}
+            }}
+          }}
+        ]}
+      ]
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "includes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

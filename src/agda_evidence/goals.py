@@ -17,6 +17,7 @@ from .core import (
     _normalised_file_records, _object, _parse_timestamp, _read_json,
     build_resolution, build_snapshot, canonical_json_bytes, derive_resolution_id,
     derive_source_id, digest_value, sha256_file, utc_now,
+    resolution_identity_projection,
 )
 
 GOAL_FORMAT = "agda-evidence/goal-observation-v1"
@@ -309,6 +310,8 @@ def _capture_goals(
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
     listing: dict[str, Any] | None = None, goal_id: int | None = None,
     probe_phases: Sequence[tuple[str, Callable[[str, int], str]]] = (("goal", _goal_request),),
+    _expected_source_id: str | None = None, _expected_agda: dict[str, Any] | None = None,
+    _expected_resolution_id: str | None = None,
 ) -> dict[str, Any]:
     if os.name != "posix":
         raise EvidenceError("the native goal adapter currently requires POSIX")
@@ -333,6 +336,8 @@ def _capture_goals(
     roots = _include_roots(includes)
     root = project_root.resolve()
     snapshot, files = build_snapshot(root)
+    if _expected_source_id is not None and snapshot["sourceId"] != _expected_source_id:
+        raise GoalEvidenceError("goal composition source pin mismatch before interaction")
     if listing and snapshot["sourceId"] != listing["snapshot"]["sourceId"]:
         raise GoalEvidenceError("goal listing source pin mismatch before interaction")
     records = {r["path"]: r for r in snapshot["files"]}
@@ -342,6 +347,10 @@ def _capture_goals(
         if not (root / directory).is_dir():
             raise EvidenceError(f"goal include root does not exist: {directory}")
     resolution = build_resolution(root, agda_binary=agda_binary)
+    if _expected_agda is not None and canonical_json_bytes(resolution_identity_projection(resolution)["agda"]) != canonical_json_bytes(_expected_agda):
+        raise GoalEvidenceError("goal composition compiler pin mismatch before interaction")
+    if _expected_resolution_id is not None and resolution["resolutionId"] != _expected_resolution_id:
+        raise GoalEvidenceError("goal composition native resolution pin mismatch before interaction")
     if listing and resolution["resolutionId"] != listing["resolution"]["resolutionId"]:
         raise GoalEvidenceError("goal listing native resolution pin mismatch before interaction")
     value = {
@@ -367,6 +376,11 @@ def _capture_goals(
             binary = Path(executable).resolve()
             if f"sha256:{sha256_file(binary)}" != resolution["agda"].get("binarySha256"):
                 raise GoalEvidenceError("goal compiler changed after resolution capture")
+            if _expected_resolution_id is not None:
+                # Guard the full visible native context again after staging,
+                # not only the executable bytes observed by the legacy adapter.
+                if build_resolution(root, agda_binary=agda_binary)["resolutionId"] != _expected_resolution_id:
+                    raise GoalEvidenceError("goal composition native resolution changed during staging")
             session = AgdaSession(_argv(str(binary), roots, safe, anchor=str(stage)), stage, timeout_seconds, max_output_bytes)
             phases = [("startup", None), ("load", lambda path, _: _request(path, "load", ""))]
             if listing:
@@ -404,10 +418,14 @@ def observe_goals(
     project_root: Path, file: str, *, agda_binary: str = "agda", includes: Sequence[str] = (), safe: bool = False,
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
     listing: dict[str, Any] | None = None, goal_id: int | None = None,
+    _expected_source_id: str | None = None, _expected_agda: dict[str, Any] | None = None,
+    _expected_resolution_id: str | None = None,
 ) -> dict[str, Any]:
     value = _capture_goals(
         project_root, file, agda_binary=agda_binary, includes=includes, safe=safe,
         timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes, listing=listing, goal_id=goal_id,
+        _expected_source_id=_expected_source_id, _expected_agda=_expected_agda,
+        _expected_resolution_id=_expected_resolution_id,
     )
     value["result"] = goal_result(value)
     value["observationId"] = goal_observation_id(value)

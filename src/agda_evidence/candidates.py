@@ -147,12 +147,16 @@ def validate_candidate_observation(value: Any) -> dict[str, Any]:
 def check_candidate(
     project_root: Path, listing: dict[str, Any], goal_id: int, expression: str, *, agda_binary: str = "agda",
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
+    _expected_source_id: str | None = None, _expected_agda: dict[str, Any] | None = None,
+    _expected_resolution_id: str | None = None,
 ) -> dict[str, Any]:
     expression = _expression(expression)
     listing = validate_goal_observation(listing)
     value = _capture_goals(
         project_root, listing["query"]["file"], listing=listing, goal_id=goal_id, agda_binary=agda_binary,
         timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes, probe_phases=_phases(expression),
+        _expected_source_id=_expected_source_id, _expected_agda=_expected_agda,
+        _expected_resolution_id=_expected_resolution_id,
     )
     value["format"] = CANDIDATE_FORMAT
     value["query"].update(operation="check", expression=expression, candidatePolicy=CANDIDATE_POLICY)
