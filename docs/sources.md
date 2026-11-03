@@ -74,3 +74,5 @@ A valid saved failed query verifies successfully. `list`/`inspect`/`check` exit 
 ## Reproducible pilot
 
 `scripts/sources-pilot.py` takes an already-provisioned dependency checkout and native compiler; it downloads nothing. It records a narrow equality-module gate, a real imported goal/context, successful `sym p`, rejected `refl`, an absent-import trial, an unsuppressed warning-blocked load, and stale dependency-source rejection. The manual source pilot workflow provisions the immutable stdlib commit separately before running that script. A local source-only dependency profile is not a general installed-library compatibility claim or a secure sandbox for hostile compiler/reflection effects.
+
+The [3 November 2026 source pilot result](pilots/sources-result-2026-11-03.md) records the completed remote stdlib workflow, all seven independently verified envelope identities, exact source/compiler subjects, and retained-artifact reproduction commands.
