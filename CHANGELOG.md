@@ -6,6 +6,7 @@
 - Includes contract/pilot documentation, source examples, tests and reusable scripts in source distributions.
 - Derives package metadata and CLI version from the single package version constant.
 - Adds external fresh-environment wheel/source installation checks and an installed-artifact CI matrix, separate from editable source tests.
+- Distinguishes native Windows drive paths from URI schemes in local catalogs, rejects network/UNC references, and retains local absolute references across different Windows drives.
 - Documents exact Python/platform/compiler observation levels and explicitly unsupported runtime profiles; no stronger evidence claims or format changes.
 
 ## 0.1.0a0 — unreleased

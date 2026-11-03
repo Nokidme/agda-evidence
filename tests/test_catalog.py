@@ -5,7 +5,7 @@ from copy import deepcopy
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import sys
 import tempfile
@@ -20,6 +20,23 @@ from agda_evidence import catalog, cli, core
 
 class CatalogTests(unittest.TestCase):
     """Local discovery is source-bound lexical evidence, not an Agda environment."""
+
+    def test_native_windows_drive_paths_are_not_remote_uris(self) -> None:
+        with patch.object(catalog.os, "name", "nt"):
+            for value in (r"C:\work\bundle", "D:/work/bundle"):
+                self.assertEqual(catalog._local_path(value), value)
+            for value in ("https://example.org/bundle", "file:///C:/bundle", "c:relative",
+                          "//host/share", r"\\host\share", r"\\?\C:\bundle"):
+                with self.subTest(value=value), self.assertRaises(catalog.CatalogConfigError):
+                    catalog._local_path(value)
+            with patch.object(catalog.os.path, "relpath", side_effect=ValueError("different drives")):
+                self.assertEqual(catalog._relative_reference(PureWindowsPath(r"D:\bundles\one"),
+                                                             PureWindowsPath(r"C:\catalogs")),
+                                 "D:/bundles/one")
+        with patch.object(catalog.os, "name", "posix"):
+            for value in (r"C:\work\bundle", "D:/work/bundle"):
+                with self.assertRaises(catalog.CatalogConfigError):
+                    catalog._local_path(value)
 
     @classmethod
     def setUpClass(cls) -> None:

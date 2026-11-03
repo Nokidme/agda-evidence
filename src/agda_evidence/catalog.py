@@ -49,9 +49,22 @@ def _entry_name(value: Any) -> str:
 def _local_path(value: Any) -> str:
     if not isinstance(value, str) or not value or any(ord(char) < 32 for char in value):
         raise CatalogConfigError("catalog bundle must be a non-empty local path without control characters")
-    if URI_SCHEME_RE.match(value) or value.startswith("//"):
+    native_drive_path = os.name == "nt" and re.match(r"^[A-Za-z]:[\\/]", value) is not None
+    if (URI_SCHEME_RE.match(value) and not native_drive_path) or value.startswith(("//", "\\\\")):
         raise CatalogConfigError("catalog bundle must be a local path, not a URL or URI")
     return value
+
+
+def _relative_reference(path: Path, anchor: Path) -> str:
+    try:
+        return Path(os.path.relpath(path, anchor)).as_posix()
+    except ValueError as error:
+        # Windows cannot express a relative reference across different drives.
+        # Both paths were resolved by the caller; preserve the validated local
+        # absolute reference instead of crashing or guessing a foreign base.
+        if os.name != "nt":
+            raise CatalogConfigError(f"cannot create local catalog reference: {error}") from error
+        return _local_path(path.as_posix())
 
 
 def validate_catalog_config(value: Any) -> dict[str, Any]:
@@ -165,7 +178,7 @@ def create_catalog(output: Path, references: Sequence[tuple[str, Path]]) -> dict
         "format": CATALOG_FORMAT,
         "entries": {
             name: {
-                "bundle": Path(os.path.relpath(paths[name], target.parent)).as_posix(),
+                "bundle": _relative_reference(paths[name], target.parent),
                 "expected": {field: indexed[name].evidence[field] for field in ("sourceId", "resolutionId")},
             }
             for name in sorted(indexed)

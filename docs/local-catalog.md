@@ -19,7 +19,7 @@ agda-evidence catalog query /work/research/catalog.json \
   --exact My.Module.lemma --kind signature --library my-library
 ```
 
-`create` verifies all selected bundles and indexes before writing a new file. It records the verified source/resolution identities and paths relative to the catalog's directory. It refuses existing output files, duplicate names, duplicate bundle aliases, or output inside a referenced evidence directory. It does not modify source or evidence, discover installed libraries, fetch dependencies, invoke Agda, or rerun a check.
+`create` verifies all selected bundles and indexes before writing a new file. It records the verified source/resolution identities and paths relative to the catalog's directory where possible; across different Windows drives it retains a validated native absolute path. It refuses existing output files, duplicate names, duplicate bundle aliases, or output inside a referenced evidence directory. It does not modify source or evidence, discover installed libraries, fetch dependencies, invoke Agda, or rerun a check.
 
 Both `verify` and `query` validate **every configured entry**. A missing or invalid entry, pin mismatch, or unbound index fails the whole operation, even if a query's filters would have excluded that entry. No partial JSON results are emitted on failure. A valid query with zero hits succeeds.
 
@@ -44,7 +44,9 @@ The complete format is [`local-catalog-v1.schema.json`](../schemas/local-catalog
 
 The digest strings above are placeholders; `catalog create` writes actual values. Entry labels match `[a-z0-9][a-z0-9._-]{0,62}` and are not Agda library names. All displayed fields are required; unknown fields and duplicate JSON keys are errors. Entries cannot be empty.
 
-Paths are local paths: absolute, or relative to the catalog file's directory, never the caller's working directory. Parent segments are allowed because references may intentionally point outside that directory. URLs, URI schemes, and network-style `//` references are rejected. No glob, tilde, or environment-variable expansion is performed. Named bundle roots, manifests, and listed component files must not themselves be symlinks. This does not sandbox local filesystem access or establish a trust boundary against hostile filesystem mutation.
+Paths are local paths: absolute, or relative to the catalog file's directory, never the caller's working directory. Parent segments are allowed because references may intentionally point outside that directory. URLs, URI schemes, and network-style `//` or UNC references are rejected. Rooted drive-letter paths such as `C:/evidence/library` are accepted on Windows, not interpreted as URI schemes or as foreign paths on POSIX. Drive-relative `C:library` and extended/device path forms are not supported. No glob, tilde, or environment-variable expansion is performed. Named bundle roots, manifests, and listed component files must not themselves be symlinks. This does not sandbox local filesystem access or establish a trust boundary against hostile filesystem mutation.
+
+The `0.1.0a1` schema patch widens local-catalog-v1 path syntax for native Windows drives without changing fields, pins or artifact identities. Existing relative/POSIX catalog syntax is unchanged. Newly emitted cross-drive references require the patched reader on Windows and are not portable to POSIX or older readers; keep evidence and catalogs on the same drive and recreate relative references if older-reader interoperability is required. A catalog has always been a machine-local reference configuration rather than a portable archive.
 
 The catalog has no content-derived ID or signature. Inspect its paths and pins before using or sharing it. Moving a catalog without its referenced layout can break it; a catalog does not copy source, evidence, or dependencies.
 

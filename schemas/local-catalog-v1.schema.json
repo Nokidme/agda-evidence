@@ -24,7 +24,8 @@
         "bundle": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^(?![A-Za-z][A-Za-z0-9+.-]*:)(?!//)[^\u0000-\u001f]+$"
+          "description": "Local relative/POSIX paths or rooted Windows drive paths. Runtime permits drive syntax only on Windows; URLs and UNC/network paths are rejected.",
+          "pattern": "^(?!//)(?!\\u005c\\u005c)(?:[A-Za-z]:[\\u005c/][^\\u0000-\\u001f]*|(?![A-Za-z][A-Za-z0-9+.-]*:)[^\\u0000-\\u001f]+)$"
         },
         "expected": {
           "type": "object",
