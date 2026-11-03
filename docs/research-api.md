@@ -122,3 +122,7 @@ The finite fixture connects the API end to end: listing → context → bounded 
 See the [independently verified native result](pilots/research-api-result-2026-11-02.md) for exact identities, source bindings and the recorded assurance limits.
 
 To complete the live AgdaLab feature, attach its existing repository/site, map authorized project/document IDs and materialized revisions to this facade, wire edit/save notifications, and add a research panel using the existing editor's UI conventions. Display current goal/context, lexical results/provenance, explicit trial input, native outcomes and current/stale evidence separately. No live editor integration is claimed until that application code and runtime have actually been changed and validated.
+
+## Separate source-aware profile
+
+Hosts that explicitly provision a pinned native source dependency may instead bind [`SourceResearchWorkspace` API version 2](source-research-api.md). It has separate wire schemas and client/dependency/bundle/composition freshness subjects, with frozen admission pins and complete source-envelope history. This is opt-in; the ordinary `ResearchWorkspace` version 1 contract above, its scopes and its source/resolution meanings remain unchanged.

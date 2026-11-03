@@ -7,6 +7,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_source_research_pilot_keeps_provisioning_and_pin_admission_explicit(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "source-research-pilot.yml").read_text(encoding="utf-8")
+        for required in ("workflow_dispatch:", "0817da6877aa045932221134913d8511caa78d97",
+                         "python scripts/source-research-pilot.py", "agda-evidence source verify",
+                         "git diff --exit-code", "native-source-research-pilot-${{ github.sha }}"):
+            self.assertIn(required, workflow)
+        script = (ROOT / "scripts" / "source-research-pilot.py").read_text(encoding="utf-8")
+        for required in ("dependencyMatchesPin", "dependency-changed", "sameSubjectRecaptureRefused",
+                         "missingBundleHistory", "crossSessionRejected", "liveEditorIntegrated",
+                         "sym p", "Example.identity n"):
+            self.assertIn(required, script)
+        self.assertNotIn("git clone", script)
+        self.assertNotIn("requests.get", script)
+
     def test_source_pilot_provisions_immutable_dependency_outside_runtime(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "sources-pilot.yml").read_text(encoding="utf-8")
         for required in ("workflow_dispatch:", "ubuntu-24.04", "0817da6877aa045932221134913d8511caa78d97",

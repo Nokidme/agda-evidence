@@ -48,9 +48,11 @@ SCHEMA_NAMES = frozenset({
     "research-request-v1.schema.json",
     "research-response-v1.schema.json",
     "source-observation-v1.schema.json",
+    "source-research-request-v2.schema.json",
+    "source-research-response-v2.schema.json",
     "type-observation-v1.schema.json",
 })
-PUBLIC_MODULES = ("checker", "client", "goals", "candidates", "research", "catalog", "sources")
+PUBLIC_MODULES = ("checker", "client", "goals", "candidates", "research", "catalog", "sources", "source_research")
 
 
 class SmokeFailure(Exception):
@@ -503,6 +505,48 @@ def native_source_workflow(cli: CLI, root: Path, binary: str) -> None:
         require(offline.json("source", "verify", path) == expected, "offline source summary changed")
     require(before == (tree_bytes(dependency), tree_bytes(client)), "native source work modified original source")
     status("native source list/inspect/check/offline verify", "passed; unindexed pinned dependency; no source edits")
+
+    from unittest.mock import patch
+    from agda_evidence.source_research import SourceResearchWorkspace
+    from agda_evidence.sources import validate_source_observation
+    with patch.dict(os.environ, cli.environment, clear=True):
+        workspace = SourceResearchWorkspace(client, {"main": "Main.agda"}, dependency_root=dependency,
+            dependency_bundle=bundle, dependency_includes=["."], agda_binary=binary, safe=True)
+        def api(op: str, revision: str | None = None, **args: Any) -> dict:
+            return workspace.handle({"apiVersion": 2, "requestId": "installed-source-api",
+                                     "op": op, "revision": revision, "args": args})
+        state = api("workspace.status")
+        require(state["status"] == "ok" and state["result"]["dependencyMatchesPin"] is True,
+                "installed source API did not admit its initial explicit pins")
+        revision = state["currentRevision"]
+        listed_api = api("goals.list", revision, documentId="main")
+        require(listed_api["status"] == "ok" and listed_api["result"]["outcome"]["status"] == "listed",
+                "installed source API native listing failed")
+        goal = listed_api["result"]["outcome"]["goals"][0]["id"]
+        trial_api = api("candidate.check", revision, listingId=listed_api["recordId"],
+                        goalId=goal, expression="Mini.identity n")
+        require(trial_api["status"] == "ok" and trial_api["result"]["outcome"]["status"] == "elaborated",
+                "installed source API native trial failed")
+        fetched = api("record.get", recordId=trial_api["recordId"])
+        saved = validate_source_observation(fetched["result"]["artifact"])
+        require(fetched["result"]["freshness"] == "current"
+                and saved["sourceObservationId"] == trial_api["result"]["sourceObservationId"],
+                "installed source API lost exact complete-envelope evidence")
+        marker = dependency / "unrelated-installed-api-edit.txt"
+        marker.write_text("private freshness fixture\n", encoding="utf-8")
+        changed = api("workspace.status")
+        require(changed["result"]["dependencyMatchesPin"] is False
+                and changed["currentRevision"] != revision, "installed source API did not invalidate changed dependency")
+        refused = api("goals.list", changed["currentRevision"], documentId="main")
+        require(refused["status"] == "error" and refused["error"]["code"] == "dependency-changed",
+                "installed source API refreshed immutable dependency pins implicitly")
+        history = api("record.get", recordId=trial_api["recordId"])
+        require(history["result"]["freshness"] == "stale"
+                and canonical_json_for_smoke(history["result"]["artifact"]) == canonical_json_for_smoke(saved),
+                "installed source API lost or promoted historical evidence")
+        marker.unlink()
+    require(before == (tree_bytes(dependency), tree_bytes(client)), "installed API fixture source was not restored")
+    status("native source research API", "passed; exact envelope retrieval; frozen dependency pins; stale history")
 
 
 def canonical_json_for_smoke(value: Any) -> str:

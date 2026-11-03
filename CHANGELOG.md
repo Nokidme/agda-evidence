@@ -5,6 +5,8 @@
 - Adds explicit one-dependency source composition for unfinished-client goal listing, selected context and non-filling expression trials, with a separate source-observation-v1 envelope.
 - Retains full dependency evidence and fresh original-client/dependency native resolution pins, explicit include policy, exact source unions and original native observations.
 - Adds pre-interaction composition guards and post-operation source/environment checks without changing existing native v1 artifact formats or enabling implicit library resolution.
+- Adds opt-in `SourceResearchWorkspace` API version 2 with frozen dependency admission, separately observed client/dependency/bundle/composition subjects, full source-envelope session history, lexical dependency discovery and stale/unknown reads; ordinary v1 remains unchanged.
+- Adds private requested-subject preconditions for source capture, serialized freshness publication and installed-artifact native session checks without changing existing source-observation-v1 records.
 
 ## 0.1.0a1 — 3 November 2026
 

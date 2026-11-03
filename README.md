@@ -157,6 +157,8 @@ The unreleased `source list/inspect/check/verify` family composes unchanged clie
 
 See the [source dependency guide](docs/sources.md) and the finite `scripts/sources-pilot.py` stdlib example. This does not activate Nix, resolve transitive dependencies, preserve a replayable closure or automatically upgrade the existing `ResearchWorkspace` runtime profile. Candidate success still means contextual elaboration only.
 
+For an explicitly opted-in editor host, [`SourceResearchWorkspace` API version 2](docs/source-research-api.md) adds dependency source/resolution/bundle and composition freshness to research revisions, lexical dependency search and complete source-envelope history. Observable changed dependencies mark history stale; missing required evidence marks it unknown. Frozen pins are never refreshed by a client request, and the ordinary v1 facade remains unchanged. `scripts/source-research-pilot.py` exercises the source-aware session independently of any app deployment.
+
 ## Verify a bundle
 
 ```sh

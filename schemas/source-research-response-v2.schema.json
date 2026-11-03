@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Host-owned source research API response v2 — not an evidence certificate",
+  "type": "object", "additionalProperties": false,
+  "required": ["apiVersion", "requestId", "op", "revision", "currentRevision", "workspace", "status", "recordId", "result", "error"],
+  "properties": {
+    "apiVersion": {"type": "integer", "const": 2},
+    "requestId": {"type": ["string", "null"], "maxLength": 128},
+    "op": {"type": ["string", "null"], "maxLength": 128},
+    "revision": {"type": ["string", "null"], "maxLength": 128},
+    "currentRevision": {"type": "string", "minLength": 1},
+    "workspace": {"oneOf": [
+      {"type": "null"},
+      {"type": "object", "additionalProperties": false,
+       "required": ["clientSourceId", "clientResolutionId", "dependencySourceId", "dependencyResolutionId", "dependencyBundleId", "compositionId"],
+       "properties": {
+         "clientSourceId": {"$ref": "#/$defs/digest"},
+         "clientResolutionId": {"$ref": "#/$defs/digest"},
+         "dependencySourceId": {"$ref": "#/$defs/digest"},
+         "dependencyResolutionId": {"$ref": "#/$defs/digest"},
+         "dependencyBundleId": {"$ref": "#/$defs/digest"},
+         "compositionId": {"$ref": "#/$defs/digest"}
+       }}
+    ]},
+    "status": {"enum": ["ok", "error", "stale"], "description": "API ok is not native success or pin admission. Inspect native outcome, dependencyMatchesPin and record freshness."},
+    "recordId": {"type": ["string", "null"]},
+    "result": {"type": ["object", "null"]},
+    "error": {"oneOf": [
+      {"type": "null"},
+      {"type": "object", "additionalProperties": false, "required": ["code", "message"],
+       "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string", "minLength": 1}}}
+    ]}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "ok"}}}, "then": {"properties": {"error": {"type": "null"}}}, "else": {"properties": {"error": {"type": "object"}}}}
+  ],
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

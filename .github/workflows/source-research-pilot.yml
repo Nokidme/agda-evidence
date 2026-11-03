@@ -1,0 +1,51 @@
+name: native stdlib source research pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Provision explicit native compiler and development package
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends agda-bin
+          /usr/bin/agda --version
+          python -m pip install -e .
+      - name: Provision fixed stdlib checkout outside the research runtime
+        run: |
+          git clone --no-checkout https://github.com/agda/agda-stdlib.git "$RUNNER_TEMP/research-stdlib"
+          git -C "$RUNNER_TEMP/research-stdlib" checkout --detach 0817da6877aa045932221134913d8511caa78d97
+          test "$(git -C "$RUNNER_TEMP/research-stdlib" rev-parse HEAD)" = 0817da6877aa045932221134913d8511caa78d97
+      - name: Exercise source-aware research, frozen pins and historical evidence
+        run: |
+          python scripts/source-research-pilot.py \
+            --dependency-root "$RUNNER_TEMP/research-stdlib" \
+            --agda-bin /usr/bin/agda --output "$RUNNER_TEMP/source-research-api-pilot"
+          for record in "$RUNNER_TEMP/source-research-api-pilot"/*.source.json; do
+            agda-evidence source verify "$record"
+          done
+          agda-evidence verify "$RUNNER_TEMP/source-research-api-pilot/dependency.evidence"
+          agda-evidence verify "$RUNNER_TEMP/source-research-api-pilot/replacement.evidence"
+      - name: Preserve original application and dependency source
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+          git -C "$RUNNER_TEMP/research-stdlib" diff --exit-code
+          test -z "$(git -C "$RUNNER_TEMP/research-stdlib" ls-files --others --exclude-standard)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-source-research-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/source-research-api-pilot
+          if-no-files-found: warn
+          retention-days: 30

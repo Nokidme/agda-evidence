@@ -255,9 +255,17 @@ def _capture_source(
     dependency_includes: Sequence[str], agda_binary: str, includes: Sequence[str], safe: bool,
     listing: dict[str, Any] | None, goal_id: int | None, expression: str | None,
     timeout_seconds: int, max_output_bytes: int,
+    _expected_subjects: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if os.name != "posix":
         raise EvidenceError("the native source adapter currently requires POSIX")
+    if _expected_subjects is not None:
+        expected = _object(_expected_subjects, "expected source subjects")
+        fields = {"clientSourceId", "clientResolutionId", "dependencySourceId",
+                  "dependencyResolutionId", "dependencyBundleId"}
+        if set(expected) != fields:
+            raise SourceEvidenceError("expected source subjects require exactly five original identities")
+        _expected_subjects = {key: _digest_identifier(expected[key], "expected source identity") for key in fields}
     file = _indexable_source_path(file, "client file")
     if any(ord(c) < 32 for c in file):
         raise EvidenceError("client file must not contain control characters")
@@ -351,6 +359,14 @@ def _capture_source(
                 (dependency_root, dependency_snapshot, native, dependency_roots, "dependency"),
             ):
                 _unchanged(root, snapshot, resolution, directories, agda_binary, field)
+            if _expected_subjects is not None:
+                captured = {"clientSourceId": client_snapshot["sourceId"],
+                            "clientResolutionId": client_resolution["resolutionId"],
+                            "dependencySourceId": current_dependency["sourceId"],
+                            "dependencyResolutionId": native["resolutionId"],
+                            "dependencyBundleId": manifest["bundleId"]}
+                if not _same(captured, _expected_subjects):
+                    raise SourceEvidenceError("source subjects changed before workspace interaction")
             guards = {"_expected_source_id": staged["sourceId"], "_expected_agda": compiler,
                       "_expected_resolution_id": workspace_resolution["resolutionId"]}
             options = {"agda_binary": agda_binary, "timeout_seconds": timeout_seconds,
@@ -381,18 +397,20 @@ def observe_source_goals(
     dependency_includes: Sequence[str], agda_binary: str = "agda", includes: Sequence[str] = (),
     safe: bool = False, listing: dict[str, Any] | None = None, goal_id: int | None = None,
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
+    _expected_subjects: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """List, or inspect a selected native goal using an explicit source listing."""
     return _capture_source(project_root, file, dependency_bundle=dependency_bundle, dependency_root=dependency_root,
                            dependency_includes=dependency_includes, agda_binary=agda_binary, includes=includes, safe=safe,
                            listing=listing, goal_id=goal_id, expression=None, timeout_seconds=timeout_seconds,
-                           max_output_bytes=max_output_bytes)
+                           max_output_bytes=max_output_bytes, _expected_subjects=_expected_subjects)
 
 
 def check_source_candidate(
     project_root: Path, listing: dict[str, Any], goal_id: int, expression: str, *, dependency_bundle: Path,
     dependency_root: Path, dependency_includes: Sequence[str], agda_binary: str = "agda",
     timeout_seconds: int = 60, max_output_bytes: int = 4_194_304,
+    _expected_subjects: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Contextual elaboration only; inherit the prior client file/includes/safe."""
     if os.name != "posix":
@@ -404,7 +422,7 @@ def check_source_candidate(
                            dependency_root=dependency_root, dependency_includes=dependency_includes,
                            agda_binary=agda_binary, includes=listing["composition"]["clientIncludes"], safe=query["safe"],
                            listing=listing, goal_id=goal_id, expression=expression, timeout_seconds=timeout_seconds,
-                           max_output_bytes=max_output_bytes)
+                           max_output_bytes=max_output_bytes, _expected_subjects=_expected_subjects)
 
 
 def source_summary(value: dict[str, Any]) -> dict[str, Any]:
