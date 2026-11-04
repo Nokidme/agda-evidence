@@ -1,0 +1,80 @@
+name: pinned Agda 2.6.4.3 native conformance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      AGDA_COMMIT: 714c7d2c76c5ffda3180e95c28669259f0dc5b5c
+      STDLIB_COMMIT: 2b8fff10f4033b91a6df4007e4a65cb10047c89c
+      EXPECTED_AGDA_VERSION: 2.6.4.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.4.8"
+          cabal-version: "3.10.3.0"
+          cabal-update: false
+      - name: Configure explicit HTTPS build dependencies
+        run: |
+          mkdir -p "$HOME/.cabal"
+          cat > "$HOME/.cabal/config" <<'EOF'
+          repository hackage.haskell.org
+            url: https://hackage.haskell.org/
+            secure: False
+          EOF
+          cabal update
+          echo "$HOME/.cabal/bin" >> "$GITHUB_PATH"
+      - name: Build the exact upstream compiler separately from research execution
+        run: |
+          git clone --no-checkout https://github.com/agda/agda.git "$RUNNER_TEMP/conformance-agda"
+          git -C "$RUNNER_TEMP/conformance-agda" checkout --detach "$AGDA_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/conformance-agda" rev-parse HEAD)" = "$AGDA_COMMIT"
+          cd "$RUNNER_TEMP/conformance-agda"
+          mkdir -p doc
+          touch doc/user-manual.pdf
+          cabal v2-install exe:agda --install-method=copy --overwrite-policy=always \
+            --constraint='happy < 2' --ghc-options='-O1 +RTS -M6G -RTS'
+          test "$("$HOME/.cabal/bin/agda" --version)" = "Agda version $EXPECTED_AGDA_VERSION"
+      - name: Provision immutable standard-library source separately
+        run: |
+          git clone --no-checkout https://github.com/agda/agda-stdlib.git "$RUNNER_TEMP/conformance-stdlib"
+          git -C "$RUNNER_TEMP/conformance-stdlib" checkout --detach "$STDLIB_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/conformance-stdlib" rev-parse HEAD)" = "$STDLIB_COMMIT"
+      - name: Build development distributions and record checksums
+        run: |
+          python -m pip install build twine
+          python -m build --outdir "$RUNNER_TEMP/conformance-dist"
+          python -m twine check "$RUNNER_TEMP/conformance-dist"/*.whl "$RUNNER_TEMP/conformance-dist"/*.tar.gz
+          (cd "$RUNNER_TEMP/conformance-dist" && sha256sum *.whl *.tar.gz > SHA256SUMS)
+      - name: Run mandatory versioned conformance in fresh wheel and source consumers
+        run: |
+          python scripts/check-native-conformance.py \
+            --dist-dir "$RUNNER_TEMP/conformance-dist" --runner scripts/native-conformance.py \
+            --agda-bin "$HOME/.cabal/bin/agda" --expected-version "$EXPECTED_AGDA_VERSION" \
+            --dependency-root "$RUNNER_TEMP/conformance-stdlib" --timeout-seconds 20 \
+            --output "$RUNNER_TEMP/native-conformance-consumers"
+      - name: Require unchanged original checkouts
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+          git -C "$RUNNER_TEMP/conformance-stdlib" diff --exit-code
+          test -z "$(git -C "$RUNNER_TEMP/conformance-stdlib" ls-files --others --exclude-standard)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-conformance-2.6.4.3-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-conformance-consumers
+            ${{ runner.temp }}/conformance-dist
+          if-no-files-found: warn
+          retention-days: 30

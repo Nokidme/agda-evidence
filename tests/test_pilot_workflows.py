@@ -7,6 +7,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PilotWorkflowTests(unittest.TestCase):
+    def test_native_conformance_keeps_versioned_provisioning_and_consumers_separate(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "native-conformance.yml").read_text(encoding="utf-8")
+        for required in ("workflow_dispatch:", "714c7d2c76c5ffda3180e95c28669259f0dc5b5c",
+                         "2b8fff10f4033b91a6df4007e4a65cb10047c89c", 'cabal-version: "3.10.3.0"',
+                         "--constraint='happy < 2'", "python scripts/check-native-conformance.py",
+                         "--expected-version", "--timeout-seconds 20", "git diff --exit-code",
+                         "native-conformance-2.6.4.3-${{ github.sha }}"):
+            self.assertIn(required, workflow)
+        wrapper = (ROOT / "scripts" / "check-native-conformance.py").read_text(encoding="utf-8")
+        for required in ("stdlib-function", "'builtin'", "'PYTHONPATH'", "'PYTHONHOME'",
+                         "'-I'", "--no-index", "consumers.json", "completed.returncode"):
+            self.assertIn(required, wrapper)
+        runner = (ROOT / "scripts" / "native-conformance.py").read_text(encoding="utf-8")
+        self.assertNotIn("git clone", runner)
+        self.assertNotIn("requests.get", runner)
+
     def test_source_research_pilot_keeps_provisioning_and_pin_admission_explicit(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "source-research-pilot.yml").read_text(encoding="utf-8")
         for required in ("workflow_dispatch:", "0817da6877aa045932221134913d8511caa78d97",

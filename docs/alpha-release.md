@@ -63,3 +63,7 @@ CI artifacts expire after 30 days. Attaching the checked distribution files to a
 ## Deliberately deferred
 
 Dependency closure preservation and offline replay, export/declaration identity graphs, residual-obligation-free candidate checking, untrusted process sandboxing, durable multi-user collaboration/history, and autonomous agents are outside this alpha. No silent proof edits, import insertion or library solving is added during stabilization. The independent AgdaLab task owns actual editor/runtime integration; feedback may justify a focused follow-up library change without expanding this release's claims.
+
+## Development-only compiler conformance
+
+The released alpha's support levels above describe that immutable release, not all later `main` changes. Unreleased development adds a [finite compiler conformance runner](native-conformance.md) with mandatory native cases, separately provisioned source profiles, fresh installed consumers and diagnostic latency sidecars. An exact-version conformance run must pass before claiming observed support for its specific operations/profile; it does not prove equivalence with AgdaLab's live binary, production isolation, end-to-end deadlines or general library compatibility.

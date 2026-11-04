@@ -8,6 +8,8 @@ It is intentionally small and local. It does not choose a build command, fetch o
 
 The published bounded alpha is [`v0.1.0a1`](https://github.com/Nokidme/agda-evidence/releases/tag/v0.1.0a1); the main branch now contains unreleased `0.1.0a2.dev0` development. Neither is a stable API. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for the release's exact tested scope and procedure.
 
+Development also provides a [finite native conformance runner](docs/native-conformance.md) for explicitly provisioned compiler/profile checks in actual installed consumers. It retains native failures and measured total host-call versus recorded inner execution spans; a native session timeout is not an end-to-end SLA. No editor deployment or performance cache is enabled by these checks.
+
 A passed bundle means only that the **recorded explicit command** exited successfully in an isolated copy of the recorded project source. It does not claim a full dependency closure, offline replayability, all-project coverage, or structured Agda diagnostics.
 
 The v1 profile distinguishes three comparison values: `sourceId` for the captured source tree, `resolutionId` for the visible partial resolution context, and `attestationId` for the time-specific command outcome. `bundleId` remains the identifier of the complete immutable artifact, so separate captures can have distinct bundle IDs even when their source and resolution IDs match.

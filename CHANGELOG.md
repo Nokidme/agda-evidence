@@ -7,6 +7,7 @@
 - Adds pre-interaction composition guards and post-operation source/environment checks without changing existing native v1 artifact formats or enabling implicit library resolution.
 - Adds opt-in `SourceResearchWorkspace` API version 2 with frozen dependency admission, separately observed client/dependency/bundle/composition subjects, full source-envelope session history, lexical dependency discovery and stale/unknown reads; ordinary v1 remains unchanged.
 - Adds private requested-subject preconditions for source capture, serialized freshness publication and installed-artifact native session checks without changing existing source-observation-v1 records.
+- Adds finite compiler-version conformance with builtin and explicit stdlib `Function.Base` profiles, retained mandatory-case failures, and separate monotonic host-operation versus recorded inner execution timings. A manual exact-source 2.6.4.3 lane uses fresh wheel/source consumers; no runtime API, evidence format, timeout policy or interface cache changes.
 
 ## 0.1.0a1 — 3 November 2026
 
