@@ -104,11 +104,15 @@ def digest_value(value: Any) -> str:
     return digest_bytes(canonical_json_bytes(value))
 
 
+_SHA256_IDENTIFIER = re.compile(r"sha256:[0-9a-f]{64}")
+
+
 def _digest_identifier(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.startswith("sha256:"):
         raise EvidenceError(f"{field} must be a sha256 identifier")
-    digest = value.removeprefix("sha256:")
-    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+    # fullmatch rejects suffixes/newlines and the explicit class admits only
+    # lowercase ASCII hex. Every identifier is still checked, with no cache.
+    if _SHA256_IDENTIFIER.fullmatch(value) is None:
         raise EvidenceError(f"{field} must be a lowercase sha256 identifier")
     return value
 

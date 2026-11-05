@@ -14,6 +14,7 @@ jobs:
       AGDA_COMMIT: 714c7d2c76c5ffda3180e95c28669259f0dc5b5c
       STDLIB_COMMIT: 2b8fff10f4033b91a6df4007e4a65cb10047c89c
       EXPECTED_AGDA_VERSION: 2.6.4.3
+      PERFORMANCE_BASELINE: c1f3a58b772619be561e58b6ea2d7d509e5db4ec
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -63,6 +64,21 @@ jobs:
             --agda-bin "$HOME/.cabal/bin/agda" --expected-version "$EXPECTED_AGDA_VERSION" \
             --dependency-root "$RUNNER_TEMP/conformance-stdlib" --timeout-seconds 20 \
             --output "$RUNNER_TEMP/native-conformance-consumers"
+      - name: Build the immutable pre-optimization wheel outside the checkout
+        run: |
+          git fetch --depth 1 origin "$PERFORMANCE_BASELINE"
+          mkdir -p "$RUNNER_TEMP/performance-baseline"
+          git archive "$PERFORMANCE_BASELINE" | tar -x -C "$RUNNER_TEMP/performance-baseline"
+          python -m build --wheel --outdir "$RUNNER_TEMP/performance-before-dist" "$RUNNER_TEMP/performance-baseline"
+      - name: Compare finite installed-wheel runs in alternating order
+        run: |
+          python scripts/compare-native-conformance.py \
+            --before-wheel "$RUNNER_TEMP"/performance-before-dist/*.whl \
+            --after-wheel "$RUNNER_TEMP"/conformance-dist/*.whl \
+            --runner scripts/native-conformance.py --agda-bin "$HOME/.cabal/bin/agda" \
+            --expected-version "$EXPECTED_AGDA_VERSION" --profile stdlib-function \
+            --dependency-root "$RUNNER_TEMP/conformance-stdlib" --repetitions 2 \
+            --output "$RUNNER_TEMP/native-performance-comparison"
       - name: Require unchanged original checkouts
         run: |
           git diff --exit-code
@@ -76,5 +92,7 @@ jobs:
           path: |
             ${{ runner.temp }}/native-conformance-consumers
             ${{ runner.temp }}/conformance-dist
+            ${{ runner.temp }}/native-performance-comparison
+            ${{ runner.temp }}/performance-before-dist
           if-no-files-found: warn
           retention-days: 30

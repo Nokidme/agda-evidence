@@ -50,6 +50,29 @@ def _records(snapshot: Any, field: str) -> list[dict[str, Any]]:
     return records
 
 
+def _require_source_evidence_profile(
+    manifest: dict[str, Any], payloads: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Require the source adapter's profile after generic bundle verification."""
+    _digest_identifier(manifest.get("bundleId"), "dependency bundleId")
+    for filename, field in (("snapshot.json", "sourceId"), ("resolution.json", "resolutionId"),
+                            ("attestation.json", "attestationId")):
+        _digest_identifier(_object(payloads[filename], filename).get(field), f"dependency {field}")
+    attestation = payloads["attestation.json"]
+    _digest_identifier(attestation.get("diagnosticsDigest"), "dependency diagnostics digest")
+    if set(_object(attestation.get("subjects"), "dependency attestation subjects")) != {"sourceId", "resolutionId"}:
+        raise SourceEvidenceError("dependency requires complete enhanced source/resolution subjects")
+    _records(payloads["snapshot.json"], "dependency snapshot")
+    _native_resolution(payloads["resolution.json"], payloads["snapshot.json"], "dependency recorded resolution")
+    return manifest, payloads
+
+
+def _load_source_evidence(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load once and require the source profile on the same verified objects."""
+    manifest, payloads = load_verified_bundle(path)
+    return _require_source_evidence_profile(manifest, payloads)
+
+
 def _source_evidence(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     """Verify the complete enhanced payload set; no declaration index is needed."""
     evidence = _object(value, "dependency evidence")
@@ -66,17 +89,7 @@ def _source_evidence(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     problems = _verify_bundle_payloads(manifest, payloads)
     if problems:
         raise SourceEvidenceError(f"invalid embedded dependency evidence: {'; '.join(problems)}")
-    _digest_identifier(manifest.get("bundleId"), "dependency bundleId")
-    for filename, field in (("snapshot.json", "sourceId"), ("resolution.json", "resolutionId"),
-                            ("attestation.json", "attestationId")):
-        _digest_identifier(_object(payloads[filename], filename).get(field), f"dependency {field}")
-    attestation = payloads["attestation.json"]
-    _digest_identifier(attestation.get("diagnosticsDigest"), "dependency diagnostics digest")
-    if set(_object(attestation.get("subjects"), "dependency attestation subjects")) != {"sourceId", "resolutionId"}:
-        raise SourceEvidenceError("dependency requires complete enhanced source/resolution subjects")
-    _records(payloads["snapshot.json"], "dependency snapshot")
-    _native_resolution(payloads["resolution.json"], payloads["snapshot.json"], "dependency recorded resolution")
-    return manifest, payloads
+    return _require_source_evidence_profile(manifest, payloads)
 
 
 def _dependency_roots(values: Sequence[str]) -> list[str]:
@@ -302,9 +315,8 @@ def _capture_source(
         raise EvidenceError("source inspection/candidate checking requires an explicit prior source listing")
     try:
         # Read each bundle component once; embed these same verified objects.
-        manifest, payloads = load_verified_bundle(dependency_bundle)
+        manifest, payloads = _load_source_evidence(dependency_bundle)
         evidence = {"manifest": manifest, "components": payloads}
-        _source_evidence(evidence)
     except EvidenceError as error:
         raise SourceEvidenceError(str(error)) from error
     dependency_snapshot = payloads["snapshot.json"]

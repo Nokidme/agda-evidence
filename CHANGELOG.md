@@ -8,6 +8,8 @@
 - Adds opt-in `SourceResearchWorkspace` API version 2 with frozen dependency admission, separately observed client/dependency/bundle/composition subjects, full source-envelope session history, lexical dependency discovery and stale/unknown reads; ordinary v1 remains unchanged.
 - Adds private requested-subject preconditions for source capture, serialized freshness publication and installed-artifact native session checks without changing existing source-observation-v1 records.
 - Adds finite compiler-version conformance with builtin and explicit stdlib `Function.Base` profiles, retained mandatory-case failures, and separate monotonic host-operation versus recorded inner execution timings. A manual exact-source 2.6.4.3 lane uses fresh wheel/source consumers; no runtime API, evidence format, timeout policy or interface cache changes.
+- Reduces pure validation work with exact compiled lowercase SHA-256 fullmatching and a private verified source-profile handoff that avoids immediate duplicate generic bundle verification. Independent live source/compiler/bundle observations and full untrusted embedded/prior/store checks remain.
+- Adds finite cProfile diagnostics and alternating-order old/new installed-wheel comparison tooling without changing native limits, accepting cached freshness or promising an SLA.
 
 ## 0.1.0a1 — 3 November 2026
 

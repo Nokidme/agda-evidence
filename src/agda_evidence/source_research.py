@@ -18,13 +18,13 @@ from .catalog import CatalogConfigError, CatalogValidationError, query_catalog
 from .client import _native_resolution
 from .core import (
     EvidenceError, build_declaration_index, build_resolution, build_snapshot,
-    canonical_json_bytes, derive_resolution_id, digest_value, load_verified_bundle,
+    canonical_json_bytes, derive_resolution_id, digest_value,
     query_declaration_index, resolution_identity_projection,
 )
 from .research import ResearchWorkspace, RequestError
 from .sources import (
     SOURCE_POLICY, SourceEvidenceError, _client_roots, _dependency_roots,
-    _directories, _same, _source_evidence, check_source_candidate,
+    _directories, _load_source_evidence, _same, check_source_candidate,
     observe_source_goals, validate_source_observation,
 )
 
@@ -102,8 +102,7 @@ class SourceResearchWorkspace(ResearchWorkspace):
         if (self._root.is_relative_to(self._dependency_root) or
                 self._dependency_root.is_relative_to(self._root)):
             raise EvidenceError("Client and dependency roots must be separate, non-overlapping directories")
-        manifest, payloads = load_verified_bundle(self._dependency_bundle)
-        _source_evidence({"manifest": manifest, "components": payloads})
+        manifest, payloads = _load_source_evidence(self._dependency_bundle)
         self._dependency_evidence = deepcopy({"manifest": manifest, "components": payloads})
         self._expectedDependency = {"dependencySourceId": payloads["snapshot.json"]["sourceId"],
                                     "dependencyResolutionId": payloads["resolution.json"]["resolutionId"],
@@ -127,9 +126,8 @@ class SourceResearchWorkspace(ResearchWorkspace):
             dependency, _ = build_snapshot(self._dependency_root)
             if not set(self._documents.values()) <= {item["path"] for item in client["files"]}:
                 raise SourceEvidenceError("Required host document is absent")
-            manifest, payloads = load_verified_bundle(self._dependency_bundle)
+            manifest, payloads = _load_source_evidence(self._dependency_bundle)
             evidence = {"manifest": manifest, "components": payloads}
-            _source_evidence(evidence)
             client_res = build_resolution(self._root, agda_binary=self._binary)
             dep_res = build_resolution(self._dependency_root, agda_binary=self._binary)
             client_compiler = _current_native(client_res, client)
