@@ -55,3 +55,7 @@ The manual exact Agda 2.6.4.3 workflow also builds the fixed pre-optimization co
 Structural regression tests spy on verified reads and generic verification calls, and cover immediate captured-object handoff, detached embedded mutation, source-profile violations, changes between capture passes, valid bundle replacement and same-length tampering with restored mtimes. Existing source/compiler/publication race and offline tamper suites remain required. A faster path is acceptable only if those boundaries and all native conformance cases continue to pass.
 
 Report actual installed-artifact results and precise source/compiler subjects before asserting observed improvement. Retained diagnostic timings are unsigned producer data, not new evidence certificates. Existing artifact validators establish internal bindings and outcome semantics, not producer authenticity, permanent freshness or performance guarantees.
+
+## Verified result
+
+The [5 November 2026 result](pilots/performance-result-2026-11-05.md) records the exact old/new wheels and pinned compiler/source subjects, serialized alternating-order raw samples, unchanged read/probe counts and independent offline checks. It observed modest lower median host-call times while preserving all mandatory conformance cases; it does not claim production equivalence, statistical significance or a fix for the larger editor timeout.
