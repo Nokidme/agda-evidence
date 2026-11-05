@@ -1,6 +1,6 @@
 # Pinned source dependencies for unfinished clients
 
-The additive `source` adapter lists and inspects unfinished client goals, then tries explicit expressions, with **one caller-selected native source dependency** available through declared include roots. It is the next development increment after `v0.1.0a1`, not part of that released wheel. It does not fetch sources, solve transitive dependencies, activate a Nix shell, infer includes from `.agda-lib`, add imports, or fill holes.
+The additive `source` adapter lists and inspects unfinished client goals, then tries explicit expressions, with **one caller-selected native source dependency** available through declared include roots. It ships in the second bounded alpha `0.1.0a2`, not the immutable `v0.1.0a1` wheel; see the [release support contract](alpha-release.md). It does not fetch sources, solve transitive dependencies, activate a Nix shell, infer includes from `.agda-lib`, add imports, or fill holes.
 
 Unlike `client infer`, this workflow does not require selecting an indexed declaration or a clean completed client. A dependency supplies source availability, not a claim that an expression resolves to a particular lexical hit. Its bundle may omit a declaration index. A prior failed dependency check is preserved as failed; successful client research never upgrades the dependency's recorded outcome.
 

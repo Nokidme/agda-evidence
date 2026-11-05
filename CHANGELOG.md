@@ -1,7 +1,11 @@
 # Changelog
 
-## 0.1.0a2.dev0 — unreleased
+## 0.1.0a2 — 5 November 2026
 
+- Stabilizes the post-a1 source composition and opt-in source research API into a second bounded GitHub alpha with 13 installed canonical schemas; no stable API, PyPI or editor deployment claim.
+- Adds fail-closed same-commit CI run/job/artifact guards and canonical distribution content/version/checksum validation. Release-mode exact Agda 2.6.4.3 conformance consumes the tested ordinary-CI distributions without rebuilding them; default developer diagnostics remain separate.
+- Retains first-alpha-format backward-reader acceptance, unchanged original ten schema resources, contextual-elaboration-only candidate assurance and measured scan-reuse latency costs rather than claiming an overall search speedup.
+- Includes explicit public workflow fixtures in source archives so their shipped workflow regression tests have the required inputs; no Git history, private configuration or prior evidence is packaged.
 - Adds explicit one-dependency source composition for unfinished-client goal listing, selected context and non-filling expression trials, with a separate source-observation-v1 envelope.
 - Retains full dependency evidence and fresh original-client/dependency native resolution pins, explicit include policy, exact source unions and original native observations.
 - Adds pre-interaction composition guards and post-operation source/environment checks without changing existing native v1 artifact formats or enabling implicit library resolution.

@@ -2,9 +2,16 @@ name: pinned Agda 2.6.4.3 native conformance
 
 on:
   workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "Optional completed same-commit CI run: validate its exact distributions without rebuilding"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   conformance:
@@ -21,6 +28,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Require completed successful same-commit CI and unique live artifact
+        if: ${{ inputs.ci_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          case "$CI_RUN_ID" in ''|0|*[!0-9]*) echo "Expected a positive numeric CI run ID" >&2; exit 2;; esac
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" > "$RUNNER_TEMP/release-ci-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" > "$RUNNER_TEMP/release-ci-jobs.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/release-ci-artifacts.json"
+          python scripts/check-release-inputs.py ci-run \
+            --metadata "$RUNNER_TEMP/release-ci-run.json" --jobs "$RUNNER_TEMP/release-ci-jobs.json" \
+            --artifacts "$RUNNER_TEMP/release-ci-artifacts.json" \
+            --repository "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" --run-id "$CI_RUN_ID" \
+            > "$RUNNER_TEMP/release-ci-validation.json"
+          cat "$RUNNER_TEMP/release-ci-validation.json"
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.ci_run_id != '' }}
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+          name: alpha-distributions-${{ github.sha }}
+          path: ${{ runner.temp }}/conformance-dist
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: "9.4.8"
@@ -53,11 +84,19 @@ jobs:
           git -C "$RUNNER_TEMP/conformance-stdlib" checkout --detach "$STDLIB_COMMIT"
           test "$(git -C "$RUNNER_TEMP/conformance-stdlib" rev-parse HEAD)" = "$STDLIB_COMMIT"
       - name: Build development distributions and record checksums
+        if: ${{ inputs.ci_run_id == '' }}
         run: |
           python -m pip install build twine
           python -m build --outdir "$RUNNER_TEMP/conformance-dist"
           python -m twine check "$RUNNER_TEMP/conformance-dist"/*.whl "$RUNNER_TEMP/conformance-dist"/*.tar.gz
           (cd "$RUNNER_TEMP/conformance-dist" && sha256sum *.whl *.tar.gz > SHA256SUMS)
+      - name: Validate exact distribution metadata checksums and canonical contents
+        run: |
+          version=$(python -c 'import ast; from pathlib import Path; tree=ast.parse(Path("src/agda_evidence/__init__.py").read_text()); print(next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "__version__" for t in n.targets)))')
+          python scripts/check-release-inputs.py distributions \
+            --dist-dir "$RUNNER_TEMP/conformance-dist" --repository-root "$GITHUB_WORKSPACE" \
+            --expected-version "$version" > "$RUNNER_TEMP/release-distribution-validation.json"
+          cat "$RUNNER_TEMP/release-distribution-validation.json"
       - name: Run mandatory versioned conformance in fresh wheel and source consumers
         run: |
           python scripts/check-native-conformance.py \
@@ -66,12 +105,14 @@ jobs:
             --dependency-root "$RUNNER_TEMP/conformance-stdlib" --timeout-seconds 20 \
             --output "$RUNNER_TEMP/native-conformance-consumers"
       - name: Build the immutable pre-optimization wheel outside the checkout
+        if: ${{ inputs.ci_run_id == '' }}
         run: |
           git fetch --depth 1 origin "$PERFORMANCE_BASELINE"
           mkdir -p "$RUNNER_TEMP/performance-baseline"
           git archive "$PERFORMANCE_BASELINE" | tar -x -C "$RUNNER_TEMP/performance-baseline"
           python -m build --wheel --outdir "$RUNNER_TEMP/performance-before-dist" "$RUNNER_TEMP/performance-baseline"
       - name: Compare finite installed-wheel runs in alternating order
+        if: ${{ inputs.ci_run_id == '' }}
         run: |
           python scripts/compare-native-conformance.py \
             --before-wheel "$RUNNER_TEMP"/performance-before-dist/*.whl \
@@ -81,6 +122,7 @@ jobs:
             --dependency-root "$RUNNER_TEMP/conformance-stdlib" --repetitions 2 \
             --output "$RUNNER_TEMP/native-performance-comparison"
       - name: Build and install fixed pre-discovery and current wheels separately
+        if: ${{ inputs.ci_run_id == '' }}
         run: |
           git fetch --depth 1 origin "$DISCOVERY_BASELINE"
           mkdir -p "$RUNNER_TEMP/discovery-baseline"
@@ -93,6 +135,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/discovery-consumers"
           sha256sum "$RUNNER_TEMP"/discovery-before-dist/*.whl "$RUNNER_TEMP"/conformance-dist/*.whl > "$RUNNER_TEMP/discovery-consumers/wheel-checksums.txt"
       - name: Validate repeated discovery in alternating installed consumers
+        if: ${{ inputs.ci_run_id == '' }}
         run: |
           runner="$GITHUB_WORKSPACE/scripts/discovery-pilot.py"
           cd "$RUNNER_TEMP"
@@ -106,6 +149,17 @@ jobs:
               --agda-bin "$HOME/.cabal/bin/agda" --expected-version "$EXPECTED_AGDA_VERSION" \
               "${extra[@]}" --output "$RUNNER_TEMP/discovery-consumers/$label"
           done
+      - name: Validate release discovery in the exact installed CI wheel
+        if: ${{ inputs.ci_run_id != '' }}
+        run: |
+          python -m venv "$RUNNER_TEMP/discovery-after-venv"
+          "$RUNNER_TEMP/discovery-after-venv/bin/python" -I -m pip install --no-deps --no-index "$RUNNER_TEMP"/conformance-dist/*.whl
+          runner="$GITHUB_WORKSPACE/scripts/discovery-pilot.py"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/discovery-after-venv/bin/python" -I "$runner" \
+            --dependency-root "$RUNNER_TEMP/conformance-stdlib" \
+            --agda-bin "$HOME/.cabal/bin/agda" --expected-version "$EXPECTED_AGDA_VERSION" \
+            --expect-reuse --output "$RUNNER_TEMP/discovery-consumers/1-after"
       - name: Require unchanged original checkouts
         run: |
           git diff --exit-code
@@ -123,5 +177,10 @@ jobs:
             ${{ runner.temp }}/performance-before-dist
             ${{ runner.temp }}/discovery-consumers
             ${{ runner.temp }}/discovery-before-dist
+            ${{ runner.temp }}/release-ci-run.json
+            ${{ runner.temp }}/release-ci-jobs.json
+            ${{ runner.temp }}/release-ci-artifacts.json
+            ${{ runner.temp }}/release-ci-validation.json
+            ${{ runner.temp }}/release-distribution-validation.json
           if-no-files-found: warn
           retention-days: 30

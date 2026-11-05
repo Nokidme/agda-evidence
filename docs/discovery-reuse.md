@@ -1,6 +1,6 @@
 # Verified-byte declaration reuse
 
-Development research workspaces reuse **pure lexical file fragments**, not complete indexes or freshness verdicts. This applies to project search in the ordinary v1 facade and project/dependency search in the explicit source-aware v2 facade. Catalog evidence remains independently reloaded and verified through its existing path. Public constructor/request/response signatures, scanner policy, index formats and scope/typing claims are unchanged.
+Research workspaces in bounded alpha `0.1.0a2` reuse **pure lexical file fragments**, not complete indexes or freshness verdicts. This applies to project search in the ordinary v1 facade and project/dependency search in the explicit source-aware v2 facade. Catalog evidence remains independently reloaded and verified through its existing path. Public constructor/request/response signatures, scanner policy, index formats and scope/typing claims are unchanged.
 
 ## Exact byte binding first
 

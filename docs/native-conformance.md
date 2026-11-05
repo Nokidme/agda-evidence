@@ -68,3 +68,9 @@ Reports and complete native artifacts are always uploaded when available. Workfl
 [1]: https://raw.githubusercontent.com/agda/agda-stdlib/2b8fff10f4033b91a6df4007e4a65cb10047c89c/doc/installation-guide.md "Pinned stdlib v2.0 installation guide"
 [2]: https://raw.githubusercontent.com/agda/agda/714c7d2c76c5ffda3180e95c28669259f0dc5b5c/Agda.cabal "Pinned Agda 2.6.4.3 source build metadata"
 [3]: https://github.com/agda/agda/issues/7401 "Agda Cabal 3.12 installation regression report"
+
+## Release-mode exact artifact acceptance
+
+For `0.1.0a2` stabilization, the manual workflow accepts optional `ci_run_id`. At the same checked-out commit, it requires a completed successful ordinary CI push run from the same repository/head repository, all eight expected jobs successful, and one nonexpired `alpha-distributions-<commit>` artifact. Invalid/missing/ambiguous inputs fail before download. The downloaded wheel/source/checksum files are compared with candidate metadata and canonical source/schema contents; release mode **does not rebuild replacement distribution files**.
+
+Those exact files run builtin and explicit stdlib-function conformance in separate fresh installed consumers, plus current-wheel repeated-discovery acceptance. Old/new diagnostic comparisons belong to default developer mode and are not rerun as a release performance claim. Raw CI input metadata, validator reports, checksums, distributions and native evidence are uploaded together. Independent verification and checksum comparison with the original CI downloads still precede tagging; see the [alpha release procedure](alpha-release.md). Neither input validation nor a passed native case implies production backend equivalence or proof completion.

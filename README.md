@@ -6,9 +6,9 @@ It is intentionally small and local. It does not choose a build command, fetch o
 
 ## Status
 
-The published bounded alpha is [`v0.1.0a1`](https://github.com/Nokidme/agda-evidence/releases/tag/v0.1.0a1); the main branch now contains unreleased `0.1.0a2.dev0` development. Neither is a stable API. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for the release's exact tested scope and procedure.
+The second bounded alpha is `0.1.0a2`. Obtain tested distributions and exact validation notes from [GitHub prereleases](https://github.com/Nokidme/agda-evidence/releases); this is not PyPI publication or a stable API. The earlier `v0.1.0a1` tag/assets remain unchanged. The core has no runtime dependencies beyond Python 3.11+. See the [alpha support and distribution contract](docs/alpha-release.md) for version-specific scope and exact-artifact release gates.
 
-Development also provides a [finite native conformance runner](docs/native-conformance.md) for explicitly provisioned compiler/profile checks in actual installed consumers. It retains native failures and measured total host-call versus recorded inner execution spans; a native session timeout is not an end-to-end SLA. No editor deployment or performance cache is enabled by these checks.
+The [finite native conformance runner](docs/native-conformance.md) checks explicitly provisioned compiler/profiles in actual installed consumers. The second-alpha release gate uses the same CI distribution bytes with exact Agda 2.6.4.3 builtin and stdlib `Function.Base` profiles. It retains native failures and measured total host-call versus recorded inner execution spans; a native session timeout is not an end-to-end SLA. These checks enable no editor deployment, native-interface cache or cached freshness verdict.
 
 [Performance work](docs/performance.md) reduces duplicate pure validation while retaining every independent live observation and full embedded-evidence check. Finite profiling and installed-wheel comparisons keep instrumented timings, observed call latency and correctness claims separate.
 
@@ -159,7 +159,7 @@ See the [research API guide](docs/research-api.md) and `scripts/research-pilot.p
 
 ## Use an explicit source dependency in unfinished client work
 
-The unreleased `source list/inspect/check/verify` family composes unchanged client sources with **one complete pinned native source dependency**, without requiring a lexical candidate selection or declaration index. A separate source envelope binds original source/environment subjects, the exact dependency bundle, declared include roots and the unchanged inner goal/candidate records. Saved selections inherit their complete composition pins; native work never adds imports or fills holes.
+The second-alpha `source list/inspect/check/verify` family composes unchanged client sources with **one complete pinned native source dependency**, without requiring a lexical candidate selection or declaration index. A separate source envelope binds original source/environment subjects, the exact dependency bundle, declared include roots and the unchanged inner goal/candidate records. Saved selections inherit their complete composition pins; native work never adds imports or fills holes.
 
 See the [source dependency guide](docs/sources.md) and the finite `scripts/sources-pilot.py` stdlib example. This does not activate Nix, resolve transitive dependencies, preserve a replayable closure or automatically upgrade the existing `ResearchWorkspace` runtime profile. Candidate success still means contextual elaboration only.
 

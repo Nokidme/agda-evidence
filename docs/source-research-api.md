@@ -1,6 +1,6 @@
 # Explicit source-aware research sessions
 
-`SourceResearchWorkspace` connects the [one-dependency source adapter](sources.md) to an editor-hosted research session: goal listing, context inspection, lexical discovery, explicit non-filling trials and exact evidence retrieval. It is an opt-in **API version 2** facade, not a replacement for `ResearchWorkspace` version 1, a public server or a live AgdaLab deployment. Existing native artifact formats and released `v0.1.0a1` assets remain unchanged; this is development on `main`.
+`SourceResearchWorkspace` connects the [one-dependency source adapter](sources.md) to an editor-hosted research session: goal listing, context inspection, lexical discovery, explicit non-filling trials and exact evidence retrieval. It is an opt-in **API version 2** facade in bounded alpha `0.1.0a2`, not a replacement for `ResearchWorkspace` version 1, a public server or a live AgdaLab deployment. Existing native artifact formats and released `v0.1.0a1` assets remain unchanged; see the [release support contract](alpha-release.md).
 
 The host configures exactly one native source dependency, with complete verified evidence, declared includes and the compiler which produced that evidence. Clients never choose paths, dependency bundles, compiler settings, flags, output files or observation dictionaries. Dependency resolution, downloads, Nix activation, imports, hole filling, agents and billing are not provided by this API.
 

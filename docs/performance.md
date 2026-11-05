@@ -1,6 +1,6 @@
 # Check-preserving performance work
 
-This development increment optimizes two pure validation paths, not the native compiler or live input-observation contract. It adds finite profiling and installed-wheel comparison tools. It does not change a wire/evidence format, source-composition policy, accepted native diagnostics, native timeout, interface behavior, public API or published alpha release.
+The second bounded alpha `0.1.0a2` includes two pure validation optimizations, not a native compiler or live input-observation cache. It adds finite profiling and installed-wheel comparison tools. These optimizations do not change a wire/evidence format, source-composition policy, accepted native diagnostics, native timeout, interface behavior or public API; the immutable first-alpha tag/assets remain unchanged.
 
 ## What changes, and what does not
 
