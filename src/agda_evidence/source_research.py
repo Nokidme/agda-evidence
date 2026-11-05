@@ -16,8 +16,10 @@ from typing import Any, Mapping, Sequence
 
 from .catalog import CatalogConfigError, CatalogValidationError, query_catalog
 from .client import _native_resolution
+# Preserve the module-local builder spy seam, including forwarded private kwargs.
+from .core import _build_declaration_index as build_declaration_index
 from .core import (
-    EvidenceError, build_declaration_index, build_resolution, build_snapshot,
+    EvidenceError, build_resolution, build_snapshot,
     canonical_json_bytes, derive_resolution_id, digest_value,
     query_declaration_index, resolution_identity_projection,
 )
@@ -152,7 +154,7 @@ class SourceResearchWorkspace(ResearchWorkspace):
                 subjects, snapshot, observed = self._observe()
             except (EvidenceError, OSError, ValueError) as error:
                 with self._state:
-                    self._generation += 1
+                    self._advance_generation_locked()
                     self._subjects = None
                 raise RequestError("freshness-unavailable", "Current source, dependency and compiler inputs could not be observed") from error
             with self._state:
@@ -204,7 +206,7 @@ class SourceResearchWorkspace(ResearchWorkspace):
             self._stored_bytes += len(payload)
         return record_id
 
-    def _search(self, args: dict[str, Any], snapshot: dict[str, Any], observed: dict[str, Any]):
+    def _search(self, args: dict[str, Any], snapshot: dict[str, Any], observed: dict[str, Any], *, _generation: int):
         matches, checked = [], []
         scope = args.get("scope", "all")
         filters = {key: args.get(key) for key in ("exact", "prefix")}
@@ -215,7 +217,9 @@ class SourceResearchWorkspace(ResearchWorkspace):
                 continue
             if not observed["dependencyMatchesPin"]:
                 raise RequestError("dependency-changed", "Dependency inputs no longer match the host-bound pins")
-            index = build_declaration_index(root, source)
+            index = self._build_discovery_index(
+                root, source, generation=_generation, _builder=build_declaration_index,
+            )
             evidence = {"sourceId": index["sourceId"], "indexId": index["indexId"]}
             if origin == "dependency":
                 bound = self._dependency_evidence
@@ -289,10 +293,11 @@ class SourceResearchWorkspace(ResearchWorkspace):
                             message="Dependency inputs no longer match the host-bound pins; rebinding requires a new workspace")
                     if listing is not None and (listing["revision"] != revision or listing["subjects"] != subjects):
                         return self._response(request, "stale", code="listing-stale", message="Relist goals for this source and compiler context")
+                    generation = self._generation
             artifact, result, error = None, None, None
             try:
                 if op == "library.search":
-                    result = self._search(args, snapshot, observed)
+                    result = self._search(args, snapshot, observed, _generation=generation)
                 else:
                     document_id = args["documentId"] if op == "goals.list" else listing["documentId"]
                     options = {"dependency_bundle": self._dependency_bundle, "dependency_root": self._dependency_root,
@@ -324,7 +329,8 @@ class SourceResearchWorkspace(ResearchWorkspace):
                     invalid_capture = isinstance(error, SourceEvidenceError) and after == subjects
                     otherwise_current = not self._dirty and self._revision() == revision
                     if invalid_capture:
-                        self._generation += 1  # invalid no-envelope capture must never reactivate an old selection
+                        # Invalid no-envelope capture must never reactivate an old selection.
+                        self._advance_generation_locked()
                     if not final["dependencyMatchesPin"]:
                         return self._response(request, "error", result=result, record_id=record_id,
                             code="dependency-changed", message="Dependency changed during research; retained evidence is historical")

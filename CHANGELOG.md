@@ -10,6 +10,9 @@
 - Adds finite compiler-version conformance with builtin and explicit stdlib `Function.Base` profiles, retained mandatory-case failures, and separate monotonic host-operation versus recorded inner execution timings. A manual exact-source 2.6.4.3 lane uses fresh wheel/source consumers; no runtime API, evidence format, timeout policy or interface cache changes.
 - Reduces pure validation work with exact compiled lowercase SHA-256 fullmatching and a private verified source-profile handoff that avoids immediate duplicate generic bundle verification. Independent live source/compiler/bundle observations and full untrusted embedded/prior/store checks remain.
 - Adds finite cProfile diagnostics and alternating-order old/new installed-wheel comparison tooling without changing native limits, accepting cached freshness or promising an SLA.
+- Binds lexical scanning to the digest-verified bytes actually read, closing the prior separate hash/text-read race; stable-input scanner/source/index formats remain unchanged.
+- Reuses bounded immutable lexical file fragments per host workspace and operation-admitted generation, with complete source snapshots, per-file byte checks, full index/query validation and independent catalog provenance retained. Every generation advance invalidates reuse; obsolete work cannot repopulate a new generation.
+- Adds finite installed repeated-discovery validation and structural scan measurements without claiming scope, candidate usability, cached freshness or production latency guarantees.
 
 ## 0.1.0a1 — 3 November 2026
 

@@ -17,7 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 BUNDLE_FORMAT = "agda-evidence/bundle-v1"
 AGGREGATE_FORMAT = "agda-evidence/aggregate-v1"
@@ -569,6 +569,26 @@ def build_declaration_index(project_root: Path, snapshot: dict[str, Any] | None 
     included in the snapshot.
     """
 
+    return _build_declaration_index(project_root, snapshot)
+
+
+def _decode_indexed_source(path: str, data: bytes) -> str:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise EvidenceError(f"indexed Agda source is not valid UTF-8: {path}") from error
+    # Match read_text's universal-newline behavior without reopening the source.
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _scan_indexed_source_bytes(path: str, data: bytes, source_sha256: str) -> list[dict[str, Any]]:
+    return _lexical_candidates_for_file(path, _decode_indexed_source(path, data), source_sha256)
+
+
+def _build_declaration_index(
+    project_root: Path, snapshot: dict[str, Any] | None = None, *,
+    _candidate_scanner: Callable[[str, bytes, str], list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     root = project_root.resolve()
     if snapshot is None:
         snapshot, _ = build_snapshot(root)
@@ -585,11 +605,11 @@ def build_declaration_index(project_root: Path, snapshot: dict[str, Any] | None 
         source = root / safe_path
         if source.is_symlink() or not source.is_file() or f"sha256:{sha256_file(source)}" != record["sha256"]:
             raise EvidenceError(f"project changed while building declaration index: {safe_path}")
-        try:
-            text = source.read_text(encoding="utf-8")
-        except UnicodeDecodeError as error:
-            raise EvidenceError(f"indexed Agda source is not valid UTF-8: {safe_path}") from error
-        entries.extend(_lexical_candidates_for_file(safe_path, text, record["sha256"]))
+        data = source.read_bytes()
+        if f"sha256:{digest_bytes(data)}" != record["sha256"]:
+            raise EvidenceError(f"project changed while building declaration index: {safe_path}")
+        scanner = _scan_indexed_source_bytes if _candidate_scanner is None else _candidate_scanner
+        entries.extend(scanner(safe_path, data, record["sha256"]))
     entries.sort(key=_index_entry_sort_key)
     index: dict[str, Any] = {
         "format": DECLARATION_INDEX_FORMAT,

@@ -52,3 +52,7 @@ The exact object format is specified by [`../schemas/declaration-index-v1.schema
 Bundle verification can prove that a source-bound index is internally consistent with the snapshot file manifest. It cannot re-run lexical scanning because evidence bundles contain file digests, not source bytes. A capture validates the supplied index against the live snapshot before it is attached; later trust in who created the bundle still requires trusted transport or signatures, which v1 does not provide.
 
 No query result establishes that a declaration typechecks, is exported, is in scope for another module, is unique, or exhausts a library. The explicit check recorded by the containing evidence bundle remains the only checker-backed claim, and it has exactly the scope stated by that bundle’s attestation.
+
+## Development workspace reuse
+
+Research sessions may [reuse bounded lexical file fragments](discovery-reuse.md), but only after verifying the bytes being scanned/reused. Complete root observations, source/index identity validation, query checks and independent catalog provenance remain. Generation changes invalidate reuse; this is not a freshness, scope or compiler-interface cache. The builder also closes the prior separate hash/text-read race by checking the exact second-read bytes before scanning.

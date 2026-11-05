@@ -15,6 +15,7 @@ jobs:
       STDLIB_COMMIT: 2b8fff10f4033b91a6df4007e4a65cb10047c89c
       EXPECTED_AGDA_VERSION: 2.6.4.3
       PERFORMANCE_BASELINE: c1f3a58b772619be561e58b6ea2d7d509e5db4ec
+      DISCOVERY_BASELINE: d1f56692d4ecc48adaff26c63a7fe26b662f470e
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -79,6 +80,32 @@ jobs:
             --expected-version "$EXPECTED_AGDA_VERSION" --profile stdlib-function \
             --dependency-root "$RUNNER_TEMP/conformance-stdlib" --repetitions 2 \
             --output "$RUNNER_TEMP/native-performance-comparison"
+      - name: Build and install fixed pre-discovery and current wheels separately
+        run: |
+          git fetch --depth 1 origin "$DISCOVERY_BASELINE"
+          mkdir -p "$RUNNER_TEMP/discovery-baseline"
+          git archive "$DISCOVERY_BASELINE" | tar -x -C "$RUNNER_TEMP/discovery-baseline"
+          python -m build --wheel --outdir "$RUNNER_TEMP/discovery-before-dist" "$RUNNER_TEMP/discovery-baseline"
+          python -m venv "$RUNNER_TEMP/discovery-before-venv"
+          python -m venv "$RUNNER_TEMP/discovery-after-venv"
+          "$RUNNER_TEMP/discovery-before-venv/bin/python" -I -m pip install --no-deps --no-index "$RUNNER_TEMP"/discovery-before-dist/*.whl
+          "$RUNNER_TEMP/discovery-after-venv/bin/python" -I -m pip install --no-deps --no-index "$RUNNER_TEMP"/conformance-dist/*.whl
+          mkdir -p "$RUNNER_TEMP/discovery-consumers"
+          sha256sum "$RUNNER_TEMP"/discovery-before-dist/*.whl "$RUNNER_TEMP"/conformance-dist/*.whl > "$RUNNER_TEMP/discovery-consumers/wheel-checksums.txt"
+      - name: Validate repeated discovery in alternating installed consumers
+        run: |
+          runner="$GITHUB_WORKSPACE/scripts/discovery-pilot.py"
+          cd "$RUNNER_TEMP"
+          for label in 1-before 1-after 2-after 2-before; do
+            variant="${label#*-}"
+            extra=()
+            if [ "$variant" = after ]; then extra=(--expect-reuse); fi
+            echo "DISCOVERY installed consumer $label"
+            "$RUNNER_TEMP/discovery-$variant-venv/bin/python" -I "$runner" \
+              --dependency-root "$RUNNER_TEMP/conformance-stdlib" \
+              --agda-bin "$HOME/.cabal/bin/agda" --expected-version "$EXPECTED_AGDA_VERSION" \
+              "${extra[@]}" --output "$RUNNER_TEMP/discovery-consumers/$label"
+          done
       - name: Require unchanged original checkouts
         run: |
           git diff --exit-code
@@ -94,5 +121,7 @@ jobs:
             ${{ runner.temp }}/conformance-dist
             ${{ runner.temp }}/native-performance-comparison
             ${{ runner.temp }}/performance-before-dist
+            ${{ runner.temp }}/discovery-consumers
+            ${{ runner.temp }}/discovery-before-dist
           if-no-files-found: warn
           retention-days: 30

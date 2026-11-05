@@ -12,6 +12,8 @@ Development also provides a [finite native conformance runner](docs/native-confo
 
 [Performance work](docs/performance.md) reduces duplicate pure validation while retaining every independent live observation and full embedded-evidence check. Finite profiling and installed-wheel comparisons keep instrumented timings, observed call latency and correctness claims separate.
 
+[Verified-byte declaration reuse](docs/discovery-reuse.md) avoids repeated pure lexical scanning within one host session/generation. It still rechecks full source inputs and the exact bytes used by the scanner, invalidates on every generation advance and constructs fresh provenance. No complete-index, freshness or native-interface cache is introduced.
+
 A passed bundle means only that the **recorded explicit command** exited successfully in an isolated copy of the recorded project source. It does not claim a full dependency closure, offline replayability, all-project coverage, or structured Agda diagnostics.
 
 The v1 profile distinguishes three comparison values: `sourceId` for the captured source tree, `resolutionId` for the visible partial resolution context, and `attestationId` for the time-specific command outcome. `bundleId` remains the identifier of the complete immutable artifact, so separate captures can have distinct bundle IDs even when their source and resolution IDs match.

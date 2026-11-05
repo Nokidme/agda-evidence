@@ -14,9 +14,12 @@ from typing import Any, Mapping, Sequence
 from .candidates import _expression, check_candidate
 from .catalog import CatalogConfigError, CatalogValidationError, query_catalog
 from .checker import _include_roots
+from ._discovery import _LexicalMemo
+# Preserve the module-local builder spy seam, including forwarded private kwargs.
+from .core import _build_declaration_index as build_declaration_index
 from .core import (
-    DECLARATION_KINDS, EvidenceError, _indexable_source_path, build_declaration_index,
-    build_resolution, build_snapshot, canonical_json_bytes, query_declaration_index,
+    DECLARATION_KINDS, EvidenceError, _indexable_source_path,
+    build_resolution, build_snapshot, canonical_json_bytes, derive_source_id, query_declaration_index,
 )
 from .goals import GoalEvidenceError, observe_goals, validate_goal_observation
 
@@ -80,6 +83,7 @@ class ResearchWorkspace:
         self._operation = threading.Lock()
         self._session = secrets.token_hex(12)
         self._generation = 0
+        self._lexical_memo = _LexicalMemo()
         self._dirty = False
         self._subjects: dict[str, str] | None = None
         self._records: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -87,6 +91,11 @@ class ResearchWorkspace:
 
     def _revision(self) -> str:
         return f"{self._session}:{self._generation}"
+
+    def _advance_generation_locked(self) -> None:
+        """Advance the epoch under _state, taking the memo lock second."""
+        self._generation += 1
+        self._lexical_memo.invalidate(self._generation)
 
     def notify_buffers(self, *, dirty: bool) -> str:
         """Trusted host edit/save notification; not a client-dispatch operation.
@@ -98,7 +107,7 @@ class ResearchWorkspace:
             raise EvidenceError("host buffer state must be Boolean")
         with self._state:
             self._dirty = dirty
-            self._generation += 1
+            self._advance_generation_locked()
             return self._revision()
 
     def _observe(self) -> tuple[dict[str, str], dict[str, Any], dict[str, Any]]:
@@ -109,14 +118,14 @@ class ResearchWorkspace:
                 raise EvidenceError("source changed during observation")
         except (EvidenceError, OSError, ValueError) as error:
             with self._state:
-                self._generation += 1
+                self._advance_generation_locked()
                 self._subjects = None
             raise RequestError("freshness-unavailable", "Current source and compiler inputs could not be observed") from error
         return {"sourceId": snapshot["sourceId"], "resolutionId": resolution["resolutionId"]}, snapshot, resolution
 
     def _sync(self, subjects: dict[str, str]) -> None:
         if self._subjects is not None and subjects != self._subjects:
-            self._generation += 1
+            self._advance_generation_locked()
         self._subjects = dict(subjects)
 
     def _response(self, request: Any, status: str, *, result=None, record_id=None, code=None, message=None):
@@ -214,14 +223,30 @@ class ResearchWorkspace:
         self._stored_bytes += len(payload)
         return record_id
 
-    def _search(self, args: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+    def _build_discovery_index(self, root, snapshot, *, generation, _builder):
+        # Re-observe the entire regular-file tree, including nonindexed notes.
+        # Cached lexical fragments never authorize skipping a freshness guard.
+        source_id = derive_source_id(snapshot)
+        if snapshot.get("sourceId") != source_id:
+            raise EvidenceError("snapshot.sourceId does not match the recorded file tree")
+        if build_snapshot(root)[0]["sourceId"] != source_id:
+            raise EvidenceError("project changed while building declaration index")
+
+        def candidates(path, data, source_sha256):
+            return self._lexical_memo.scan(path, data, source_sha256, generation=generation)
+
+        return _builder(root, snapshot, _candidate_scanner=candidates)
+
+    def _search(self, args: dict[str, Any], snapshot: dict[str, Any], *, _generation: int) -> dict[str, Any]:
         matches = []
         checked_entries = []
         scope = args.get("scope", "all")
         filters = {key: args.get(key) for key in ("exact", "prefix")}
         kinds = args.get("kinds", [])
         if scope in {"all", "project"}:
-            index = build_declaration_index(self._root, snapshot)
+            index = self._build_discovery_index(
+                self._root, snapshot, generation=_generation, _builder=build_declaration_index,
+            )
             for hit in query_declaration_index(index, **filters, kinds=kinds):
                 matches.append({**hit, "origin": "project", "evidence": {"sourceId": index["sourceId"], "indexId": index["indexId"]}})
         if scope in {"all", "catalog"}:
@@ -281,11 +306,12 @@ class ResearchWorkspace:
                     return self._response(request, "stale", code="workspace-changed", message="Save the requested editor revision and refresh workspace status")
                 if listing is not None and (listing["revision"] != revision or listing["subjects"] != subjects):
                     return self._response(request, "stale", code="listing-stale", message="Relist goals for this source and compiler context")
+                generation = self._generation
             artifact = None
             error = None
             try:
                 if op == "library.search":
-                    result = self._search(args, snapshot)
+                    result = self._search(args, snapshot, _generation=generation)
                 else:
                     document_id = args["documentId"] if op == "goals.list" else listing["documentId"]
                     if op == "candidate.check":

@@ -523,6 +523,23 @@ def native_source_workflow(cli: CLI, root: Path, binary: str) -> None:
         require(listed_api["status"] == "ok" and listed_api["result"]["outcome"]["status"] == "listed",
                 "installed source API native listing failed")
         goal = listed_api["result"]["outcome"]["goals"][0]["id"]
+        from agda_evidence import core
+        with patch.object(core, "_lexical_candidates_for_file", wraps=core._lexical_candidates_for_file) as scan:
+            first_search = api("library.search", revision, listingId=listed_api["recordId"],
+                               goalId=goal, exact="Mini.identity", scope="all")
+            first_scans = scan.call_count
+            second_search = api("library.search", revision, listingId=listed_api["recordId"],
+                                goalId=goal, exact="Mini.identity", scope="all")
+            require(first_search["status"] == second_search["status"] == "ok" and first_scans == 2
+                    and scan.call_count == first_scans, "installed discovery did not reuse verified lexical work")
+            require(first_search["result"] == second_search["result"]
+                    and len(second_search["result"]["entries"]) == 1,
+                    "installed repeated discovery changed deterministic candidates")
+            hit = second_search["result"]["entries"][0]
+            require(hit["origin"] == "dependency" and hit["scopeStatus"] == "not-established"
+                    and hit["candidateUsability"] == "not-tested"
+                    and hit["evidence"]["bundleId"] == state["result"]["dependencyPins"]["dependencyBundleId"],
+                    "installed lexical reuse changed provenance or implied candidate usability")
         trial_api = api("candidate.check", revision, listingId=listed_api["recordId"],
                         goalId=goal, expression="Mini.identity n")
         require(trial_api["status"] == "ok" and trial_api["result"]["outcome"]["status"] == "elaborated",
@@ -546,7 +563,7 @@ def native_source_workflow(cli: CLI, root: Path, binary: str) -> None:
                 "installed source API lost or promoted historical evidence")
         marker.unlink()
     require(before == (tree_bytes(dependency), tree_bytes(client)), "installed API fixture source was not restored")
-    status("native source research API", "passed; exact envelope retrieval; frozen dependency pins; stale history")
+    status("native source research API", "passed; verified-byte repeated discovery; exact envelope retrieval; frozen dependency pins; stale history")
 
 
 def canonical_json_for_smoke(value: Any) -> str:
