@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased tooling
+
+- Adds offline verification and canonical-byte accounting for explicit saved type, goal, candidate, client and source observations, including embedded prior/dependency sections and a FIFO history-budget simulation.
+- Keeps original evidence and failed native outcomes unchanged. Diagnostic sizes do not represent process RSS, OS limit enforcement, native runtime capacity or source freshness; no runtime module, artifact schema or published alpha tag changes.
+
 ## 0.1.0a2 — 5 November 2026
 
 - Stabilizes the post-a1 source composition and opt-in source research API into a second bounded GitHub alpha with 13 installed canonical schemas; no stable API, PyPI or editor deployment claim.

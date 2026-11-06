@@ -506,6 +506,32 @@ def native_source_workflow(cli: CLI, root: Path, binary: str) -> None:
     require(before == (tree_bytes(dependency), tree_bytes(client)), "native source work modified original source")
     status("native source list/inspect/check/offline verify", "passed; unindexed pinned dependency; no source edits")
 
+    # Account only saved artifacts; the diagnostic must not launch Agda or inspect
+    # live inputs. This external script imports the installed wheel/sdist under -I.
+    accounting_output = root / "source-accounting.json"
+    accounting_script = SCRIPT_PATH.parent / "evidence-accounting.py"
+    accounting_before = {path: path.read_bytes() for path in (listing_path, context_path, candidate_path)}
+    accounting_run = subprocess.run(
+        [sys.executable, "-I", str(accounting_script), "--artifact", str(listing_path),
+         "--artifact", str(context_path), "--artifact", str(candidate_path),
+         "--output", str(accounting_output), "--max-records", "2"],
+        cwd=cli.cwd, env=offline_env, text=True, capture_output=True, timeout=60, check=False,
+    )
+    require(accounting_run.returncode == 0, f"installed offline accounting failed: {accounting_run.stderr}")
+    accounting = read_object(accounting_output)
+    require(accounting["format"] == "evidence-accounting-diagnostic-v1", "unexpected accounting diagnostic")
+    require([item["nativeStatus"] for item in accounting["records"]] == ["listed", "inspected", "elaborated"],
+            "offline accounting changed original native outcomes")
+    sizes = [len(canonical_json_for_smoke(value).encode("utf-8")) for value in (listing, context, candidate)]
+    require([item["canonicalPayloadBytes"] for item in accounting["records"]] == sizes,
+            "offline accounting differs from canonical session payload sizes")
+    require(accounting["history"]["retainedInputIndexes"] == [1, 2]
+            and accounting["history"]["storedBytes"] == sum(sizes[1:]),
+            "offline FIFO accounting differs from bounded history policy")
+    require(accounting_before == {path: path.read_bytes() for path in accounting_before},
+            "offline accounting modified original observations")
+    status("installed offline accounting", "passed; canonical payloads and FIFO only, not runtime RAM")
+
     from unittest.mock import patch
     from agda_evidence.source_research import SourceResearchWorkspace
     from agda_evidence.sources import validate_source_observation

@@ -192,6 +192,8 @@ Read the [v1 schema notes](docs/schema.md) before publishing a bundle. Bundle co
 python -m unittest discover -s tests -v
 ```
 
+Development tooling includes [offline evidence accounting](docs/evidence-accounting.md) for explicit saved observations: canonical payload sizes, embedded-listing costs and a bounded FIFO-history simulation. It verifies full records without running Agda, but does not measure process memory, source freshness or production capacity. This diagnostic is post-`v0.1.0a2` tooling; the released alpha tag is unchanged.
+
 The first validation target is a common contract across `agda-stdlib`, `agda-algebras`, and the Cardano formal ledger. The [agda-stdlib pilot](docs/pilots/agda-stdlib.md) transcribes a full-library gate, while the two Nix pilots preserve their projects’ native root-level commands. The core uses adapters only where project-specific conventions cannot fit the generic contract.
 
 ## License
